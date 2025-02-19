@@ -19,18 +19,22 @@ A fun Discord bot that manages strawberries, plays games, and follows users in v
 
 ## Commands
 
-- `!purge [number]` - Delete specified number of messages
-- `!ping` - Check bot latency
-- `!join` - Join your voice channel
-- `!leave` - Leave current voice channel
-- `!follow [@user]` - Follow specified user (or yourself if no user mentioned)
-- `!unfollow` - Stop following the current user
-- `!strawberries` - Check your strawberry count
-- `!roulette [bet]` - Bet strawberries on different options
-- `!daily` - Get your daily strawberries
-- `!give [@user] [amount]` - Give strawberries to a user (Admin only)
-- `!transfer [@user] [amount]` - Transfer strawberries to another user
-- `!set [@user] [amount]` - Set user's strawberry count (Admin only)
+The bot primarily uses Discord's slash commands (/) for all functionality.
+
+### Available Commands
+- `/strawberries [user]` - Check strawberry balance
+- `/daily` - Get your daily strawberries
+- `/transfer <user> <amount>` - Transfer strawberries to another user
+- `/roulette <bet>` - Play strawberry roulette with interactive betting
+- `/join` - Join your voice channel
+- `/leave` - Leave current voice channel
+- `/follow <user>` - Follow a user between channels
+- `/unfollow` - Stop following the current user
+- `/purge [amount] [user]` - Delete messages (Admin only)
+- `/set <user> <amount>` - Set user's strawberry count (Admin only)
+- `/cleanup [days]` - Clean up inactive users (Admin only)
+
+Note: Slash commands (/) provide better autocomplete and parameter hints.
 
 ## Setup
 

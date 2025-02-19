@@ -18,7 +18,6 @@ LOGS_DIR.mkdir(exist_ok=True)
 
 # Bot settings
 OWNER_ID: Final[int] = 159529126842204160
-COMMAND_PREFIX: Final[str] = "!sb "
 
 # Discord settings
 INTENTS = discord.Intents.all()
@@ -43,14 +42,6 @@ MAX_STREAK_BONUS: Final[int] = 10   # Cap the streak bonus
 # Roulette settings
 MIN_BET: Final[int] = 1
 MAX_BET: Final[int] = 1000  # Prevent excessive betting
-ROULETTE_OPTIONS: Final[Dict] = {
-    "🔴": {"name": "Red", "payout": 2, "emoji": "🔴"},
-    "⚫": {"name": "Black", "payout": 2, "emoji": "⚫"},
-    "1️⃣": {"name": "First Third (1-12)", "payout": 3, "emoji": "1️⃣"},
-    "2️⃣": {"name": "Second Third (13-24)", "payout": 3, "emoji": "2️⃣"},
-    "3️⃣": {"name": "Third Third (25-36)", "payout": 3, "emoji": "3️⃣"},
-    "🎯": {"name": "Single Number (1-36)", "payout": 35, "emoji": "🎯"}
-}
 
 # Random strawberry response settings
 MIN_RANDOM_STRAWBERRIES: Final[int] = 3
@@ -116,42 +107,6 @@ COLORS = {
 # Logging setup
 LOG_FORMAT = '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
 DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
-
-# Command groups for slash commands
-COMMAND_GROUPS: Dict[str, Dict[str, str]] = {
-    'economy': {
-        'name': 'economy',
-        'description': 'Commands for managing your strawberry economy'
-    },
-    'games': {
-        'name': 'games',
-        'description': 'Fun games to play and earn strawberries'
-    },
-    'admin': {
-        'name': 'admin',
-        'description': 'Administrative commands for managing the bot'
-    },
-    'voice': {
-        'name': 'voice',
-        'description': 'Voice channel related commands'
-    }
-}
-
-# Slash command descriptions
-COMMAND_DESCRIPTIONS: Dict[str, str] = {
-    'strawberries': 'Check your strawberry balance',
-    'daily': 'Claim your daily strawberries',
-    'transfer': 'Transfer strawberries to another user',
-    'leaderboard': 'View the strawberry leaderboard',
-    'roulette': 'Bet your strawberries in roulette',
-    'purge': 'Clean up messages in a channel',
-    'give': 'Give strawberries to a user (Admin only)',
-    'set': 'Set a user\'s strawberry balance (Admin only)',
-    'join': 'Join your voice channel',
-    'leave': 'Leave the voice channel',
-    'follow': 'Follow a user between voice channels',
-    'unfollow': 'Stop following a user'
-}
 
 def setup_logger(name: str) -> logging.Logger:
     """Set up a logger with file and console handlers.

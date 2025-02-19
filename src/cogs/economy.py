@@ -6,7 +6,7 @@ import asyncio
 from typing import Optional, List, Union
 from datetime import datetime, timedelta
 
-from utils.core import COLORS, COMMAND_GROUPS, setup_logger
+from utils.core import COLORS, setup_logger
 
 logger = setup_logger(__name__)
 
@@ -15,38 +15,26 @@ class Economy(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
+        logger.info("Economy cog initialized")
         
-    economy = app_commands.Group(
-        name=COMMAND_GROUPS['economy']['name'],
-        description=COMMAND_GROUPS['economy']['description']
-    )
-    
-    # Traditional command
-    @commands.command(name='strawberries', aliases=['bal', 'balance'])
-    async def strawberries_command(self, ctx, user: Optional[discord.User] = None) -> None:
-        """Check strawberry balance and stats."""
-        await self._show_strawberries(ctx, user)
+    async def cog_load(self) -> None:
+        """Called when the cog is loaded."""
+        logger.info("Economy cog loaded")
         
-    # Slash command version
-    @economy.command(name='strawberries')
-    async def strawberries_slash(
+    @app_commands.command(name='strawberries', description='Check strawberry balance and stats')
+    @app_commands.describe(user="The user to check (optional)")
+    async def strawberries(
         self,
         interaction: discord.Interaction,
         user: Optional[discord.User] = None
     ) -> None:
         """Check strawberry balance and stats."""
-        await self._show_strawberries(interaction, user)
-        
-    async def _show_strawberries(
-        self,
-        ctx_or_interaction: Union[commands.Context, discord.Interaction],
-        user: Optional[discord.User] = None
-    ) -> None:
-        """Shared logic for showing strawberry balance."""
-        target = user or (ctx_or_interaction.user if isinstance(ctx_or_interaction, discord.Interaction) 
-                         else ctx_or_interaction.author)
-        
+        logger.info(f"Strawberries command invoked by {interaction.user.id}")
         try:
+            # Send immediate acknowledgment
+            await interaction.response.send_message("Fetching strawberry data...", ephemeral=True)
+            
+            target = user or interaction.user
             data = self.bot.game.get_player_data(target.id)
             rank = await self.bot.game.get_rank(target.id)
             
@@ -81,47 +69,32 @@ class Economy(commands.Cog):
                     inline=True
                 )
                 
-            if isinstance(ctx_or_interaction, discord.Interaction):
-                await ctx_or_interaction.response.send_message(embed=embed)
-            else:
-                await ctx_or_interaction.send(embed=embed)
+            # Edit the original message with the complete data
+            await interaction.edit_original_response(embed=embed)
+            logger.info(f"Successfully displayed strawberries for {target.id}")
                 
         except Exception as e:
-            logger.error(f"Error checking strawberries: {e}")
+            logger.error(f"Error checking strawberries: {e}", exc_info=True)
             error_msg = "❌ Failed to retrieve strawberry data!"
-            if isinstance(ctx_or_interaction, discord.Interaction):
-                await ctx_or_interaction.response.send_message(error_msg, ephemeral=True)
-            else:
-                await ctx_or_interaction.send(error_msg)
+            try:
+                await interaction.edit_original_response(content=error_msg)
+            except:
+                await interaction.followup.send(error_msg, ephemeral=True)
                 
-    # Traditional command
-    @commands.command(name='daily')
-    @commands.cooldown(1, 86400, commands.BucketType.user)  # Once per day
-    async def daily_command(self, ctx) -> None:
-        """Claim daily strawberry reward."""
-        await self._claim_daily(ctx)
-        
-    # Slash command version
-    @economy.command(name='daily')
+    @app_commands.command(name='daily', description='Claim your daily strawberry reward')
     @app_commands.checks.cooldown(1, 86400)  # Once per day
-    async def daily_slash(self, interaction: discord.Interaction) -> None:
+    async def daily(self, interaction: discord.Interaction) -> None:
         """Claim daily strawberry reward."""
-        await self._claim_daily(interaction)
-        
-    async def _claim_daily(
-        self,
-        ctx_or_interaction: Union[commands.Context, discord.Interaction]
-    ) -> None:
-        """Shared logic for claiming daily reward."""
+        logger.info(f"Daily command invoked by {interaction.user.id}")
         try:
-            user_id = (ctx_or_interaction.user.id if isinstance(ctx_or_interaction, discord.Interaction)
-                      else ctx_or_interaction.author.id)
+            # Send immediate acknowledgment
+            await interaction.response.send_message("Claiming daily reward...", ephemeral=True)
             
             # Get reward amount with streak bonus
-            reward = await self.bot.game.claim_daily(user_id)
+            reward = await self.bot.game.claim_daily(interaction.user.id)
             
             if reward > 0:
-                data = self.bot.game.get_player_data(user_id)
+                data = self.bot.game.get_player_data(interaction.user.id)
                 streak = data['streak']
                 
                 embed = discord.Embed(
@@ -145,30 +118,23 @@ class Economy(commands.Cog):
                         inline=True
                     )
                     
-                # Add next claim time
-                next_claim = datetime.now() + timedelta(days=1)
-                embed.set_footer(text=f"Next claim: {next_claim.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-                
-                if isinstance(ctx_or_interaction, discord.Interaction):
-                    await ctx_or_interaction.response.send_message(embed=embed)
-                else:
-                    await ctx_or_interaction.send(embed=embed)
+                await interaction.edit_original_response(embed=embed)
+                logger.info(f"Daily reward claimed successfully by {interaction.user.id}")
             else:
-                error_msg = "❌ You've already claimed your daily reward!"
-                if isinstance(ctx_or_interaction, discord.Interaction):
-                    await ctx_or_interaction.response.send_message(error_msg, ephemeral=True)
-                else:
-                    await ctx_or_interaction.send(error_msg)
+                await interaction.edit_original_response(
+                    content="❌ You've already claimed your daily reward!"
+                )
+                logger.info(f"Daily reward already claimed by {interaction.user.id}")
                     
         except Exception as e:
-            logger.error(f"Error claiming daily reward: {e}")
+            logger.error(f"Error claiming daily reward: {e}", exc_info=True)
             error_msg = "❌ Failed to claim daily reward!"
-            if isinstance(ctx_or_interaction, discord.Interaction):
-                await ctx_or_interaction.response.send_message(error_msg, ephemeral=True)
-            else:
-                await ctx_or_interaction.send(error_msg)
-            
-    @economy.command(name='transfer')
+            try:
+                await interaction.edit_original_response(content=error_msg)
+            except:
+                await interaction.followup.send(error_msg, ephemeral=True)
+                
+    @app_commands.command(name='transfer', description='Transfer strawberries to another user')
     @app_commands.describe(
         user="The user to transfer strawberries to",
         amount="Amount of strawberries to transfer"
@@ -180,28 +146,29 @@ class Economy(commands.Cog):
         amount: int
     ) -> None:
         """Transfer strawberries to another user."""
-        if amount <= 0:
-            await interaction.response.send_message(
-                "❌ Amount must be positive!",
-                ephemeral=True
-            )
-            return
-            
-        if user.bot:
-            await interaction.response.send_message(
-                "❌ You can't transfer strawberries to bots!",
-                ephemeral=True
-            )
-            return
-            
-        if user.id == interaction.user.id:
-            await interaction.response.send_message(
-                "❌ You can't transfer strawberries to yourself!",
-                ephemeral=True
-            )
-            return
-            
+        logger.info(f"Transfer command invoked by {interaction.user.id}")
         try:
+            # Send immediate acknowledgment
+            await interaction.response.send_message("Processing transfer...", ephemeral=True)
+            
+            if amount <= 0:
+                await interaction.edit_original_response(
+                    content="❌ Amount must be positive!"
+                )
+                return
+                
+            if user.bot:
+                await interaction.edit_original_response(
+                    content="❌ You can't transfer strawberries to bots!"
+                )
+                return
+                
+            if user.id == interaction.user.id:
+                await interaction.edit_original_response(
+                    content="❌ You can't transfer strawberries to yourself!"
+                )
+                return
+                
             # Attempt transfer
             success = await self.bot.game.transfer_strawberries(
                 interaction.user.id,
@@ -234,21 +201,23 @@ class Economy(commands.Cog):
                     inline=True
                 )
                 
-                await interaction.response.send_message(embed=embed)
+                await interaction.edit_original_response(embed=embed)
+                logger.info(f"Successfully transferred {amount} strawberries from {interaction.user.id} to {user.id}")
             else:
-                await interaction.response.send_message(
-                    "❌ Insufficient strawberries for transfer!",
-                    ephemeral=True
+                await interaction.edit_original_response(
+                    content="❌ Insufficient strawberries for transfer!"
                 )
+                logger.warning(f"Failed transfer attempt from {interaction.user.id} - insufficient funds")
                 
         except Exception as e:
-            logger.error(f"Error transferring strawberries: {e}")
-            await interaction.response.send_message(
-                "❌ Failed to transfer strawberries!",
-                ephemeral=True
-            )
+            logger.error(f"Error transferring strawberries: {e}", exc_info=True)
+            error_msg = "❌ Failed to transfer strawberries!"
+            try:
+                await interaction.edit_original_response(content=error_msg)
+            except:
+                await interaction.followup.send(error_msg, ephemeral=True)
             
-    @economy.command(name='leaderboard')
+    @app_commands.command(name='leaderboard', description='View the strawberry leaderboard')
     @app_commands.describe(page="Page number to view (default: 1)")
     async def leaderboard(
         self,

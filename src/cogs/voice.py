@@ -5,7 +5,7 @@ from discord.ext import commands
 from typing import Optional, Dict
 import asyncio
 
-from utils.core import COLORS, COMMAND_GROUPS, setup_logger
+from utils.core import COLORS, setup_logger
 
 logger = setup_logger(__name__)
 
@@ -16,12 +16,7 @@ class Voice(commands.Cog):
         self.bot = bot
         self.following: Dict[int, int] = {}  # user_id: target_id
         
-    voice = app_commands.Group(
-        name=COMMAND_GROUPS['voice']['name'],
-        description=COMMAND_GROUPS['voice']['description']
-    )
-    
-    @voice.command(name='join')
+    @app_commands.command(name='join', description='Join your voice channel')
     async def join(self, interaction: discord.Interaction) -> None:
         """Join your voice channel."""
         if not interaction.guild:
@@ -75,7 +70,7 @@ class Voice(commands.Cog):
                 ephemeral=True
             )
             
-    @voice.command(name='leave')
+    @app_commands.command(name='leave', description='Leave the current voice channel')
     async def leave(self, interaction: discord.Interaction) -> None:
         """Leave the voice channel."""
         if not interaction.guild:
@@ -112,7 +107,7 @@ class Voice(commands.Cog):
                 ephemeral=True
             )
             
-    @voice.command(name='follow')
+    @app_commands.command(name='follow', description='Follow a user between voice channels')
     @app_commands.describe(
         user="The user to follow between voice channels"
     )
@@ -206,7 +201,7 @@ class Voice(commands.Cog):
             if interaction.user.id in self.following:
                 del self.following[interaction.user.id]
                 
-    @voice.command(name='unfollow')
+    @app_commands.command(name='unfollow', description='Stop following users')
     async def unfollow(self, interaction: discord.Interaction) -> None:
         """Stop following users."""
         if interaction.user.id in self.following:

@@ -5,7 +5,7 @@ from discord.ext import commands
 from typing import Optional
 import asyncio
 
-from utils.core import COLORS, COMMAND_GROUPS, setup_logger
+from utils.core import COLORS, setup_logger, OWNER_ID
 
 logger = setup_logger(__name__)
 
@@ -14,116 +14,22 @@ class Admin(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
+        logger.info("Admin cog initialized")
         
-    # Traditional command
-    @commands.command(name='purge')
-    async def purge_command(self, ctx, amount: int = 5, user: Optional[discord.Member] = None) -> None:
-        """Clean up messages in a channel.
+    async def cog_load(self) -> None:
+        """Called when the cog is loaded."""
+        logger.info("Admin cog loaded")
         
-        Usage:
-        !sb purge <amount>          - Delete <amount> messages
-        !sb purge <amount> @user    - Delete <amount> messages from @user
-        """
-        try:
-            # Delete messages
-            def check(message):
-                if user:
-                    return message.author == user
-                return True
-                
-            # Add 1 to include command message
-            deleted = await ctx.channel.purge(
-                limit=amount + 1,
-                check=check
-            )
-            
-            # Send result
-            if user:
-                result_msg = await ctx.send(
-                    f"✨ Deleted {len(deleted)-1} messages from {user.mention}!"
-                )
-            else:
-                result_msg = await ctx.send(
-                    f"✨ Deleted {len(deleted)-1} messages!"
-                )
-            
-            # Auto-delete the result message after 3 seconds
-            await asyncio.sleep(3)
-            await result_msg.delete()
-            
-            # Log the action
-            logger.info(
-                f"Purge: {ctx.author} deleted {len(deleted)-1} messages"
-                f"{f' from {user}' if user else ''} in #{ctx.channel}"
-            )
-            
-        except discord.Forbidden:
-            await ctx.send("❌ I need the 'Manage Messages' permission!")
-        except Exception as e:
-            await ctx.send(f"❌ Error: {str(e)}")
-            logger.error(f"Error purging messages: {e}")
-            
-    admin = app_commands.Group(
-        name=COMMAND_GROUPS['admin']['name'],
-        description=COMMAND_GROUPS['admin']['description'],
-        default_permissions=discord.Permissions(administrator=True)
-    )
-    
-    @admin.command(name='give')
-    @app_commands.describe(
-        user="The user to give strawberries to",
-        amount="Amount of strawberries to give"
-    )
-    async def give(
-        self,
-        interaction: discord.Interaction,
-        user: discord.User,
-        amount: int
-    ) -> None:
-        """Give strawberries to a user (Admin only)."""
-        if amount <= 0:
-            await interaction.response.send_message(
-                "❌ Amount must be positive!",
-                ephemeral=True
-            )
-            return
-            
-        try:
-            # Add strawberries
-            await self.bot.game.add_strawberries(user.id, amount)
-            
-            # Get new balance
-            new_balance = self.bot.game.get_player_data(user.id)['strawberries']
-            
-            embed = discord.Embed(
-                title="🎁 Strawberries Given",
-                description=f"Given 🍓 **{amount:,}** to {user.mention}",
-                color=COLORS['success']
-            )
-            
-            embed.add_field(
-                name="New Balance",
-                value=f"🍓 {new_balance:,}",
-                inline=True
-            )
-            
-            await interaction.response.send_message(embed=embed)
-            logger.info(
-                f"Admin {interaction.user.id} gave {amount} strawberries to {user.id}"
-            )
-            
-        except Exception as e:
-            logger.error(f"Error giving strawberries: {e}")
-            await interaction.response.send_message(
-                "❌ Failed to give strawberries!",
-                ephemeral=True
-            )
-            
-    @admin.command(name='set')
+    def is_owner_or_has_perms(self, interaction: discord.Interaction) -> bool:
+        """Check if user is owner or has required permissions."""
+        return interaction.user.id == OWNER_ID or interaction.channel.permissions_for(interaction.user).manage_messages
+        
+    @app_commands.command(name='set', description='Set a user\'s strawberry balance (Admin only)')
     @app_commands.describe(
         user="The user to set strawberries for",
         amount="Amount to set their strawberries to"
     )
+    @app_commands.default_permissions(administrator=True)
     async def set(
         self,
         interaction: discord.Interaction,
@@ -131,6 +37,14 @@ class Admin(commands.Cog):
         amount: int
     ) -> None:
         """Set a user's strawberry balance (Admin only)."""
+        # Check if user is owner or admin
+        if not (interaction.user.id == OWNER_ID or interaction.user.guild_permissions.administrator):
+            await interaction.response.send_message(
+                "❌ This command is only available to administrators!",
+                ephemeral=True
+            )
+            return
+
         if amount < 0:
             await interaction.response.send_message(
                 "❌ Amount cannot be negative!",
@@ -162,16 +76,25 @@ class Admin(commands.Cog):
                 ephemeral=True
             )
             
-    @admin.command(name='cleanup')
+    @app_commands.command(name='cleanup', description='Clean up inactive users from the database (Admin only)')
     @app_commands.describe(
         days="Number of days of inactivity (default: 30)"
     )
+    @app_commands.default_permissions(administrator=True)
     async def cleanup(
         self,
         interaction: discord.Interaction,
         days: Optional[int] = 30
     ) -> None:
         """Clean up inactive users from the database."""
+        # Check if user is owner or admin
+        if not (interaction.user.id == OWNER_ID or interaction.user.guild_permissions.administrator):
+            await interaction.response.send_message(
+                "❌ This command is only available to administrators!",
+                ephemeral=True
+            )
+            return
+
         if days <= 0:
             await interaction.response.send_message(
                 "❌ Days must be positive!",
@@ -226,69 +149,113 @@ class Admin(commands.Cog):
                 ephemeral=True
             )
             
-    # Slash command version of purge
-    @admin.command(name='purge')
+    @app_commands.command(name='purge', description='Clean up messages in a channel')
     @app_commands.describe(
-        amount="Number of messages to delete (default: 100)",
+        amount="Number of messages to delete (default: 10)",
         user="Only delete messages from this user (optional)"
     )
-    @app_commands.checks.has_permissions(manage_messages=True)
-    async def purge_slash(
+    @app_commands.guild_only()  # Ensure command only works in servers
+    async def purge(
         self,
         interaction: discord.Interaction,
-        amount: Optional[int] = 100,
+        amount: Optional[int] = 10,
         user: Optional[discord.User] = None
     ) -> None:
         """Clean up messages in a channel."""
-        if amount <= 0:
+        logger.info(f"Purge command invoked by {interaction.user.id} for {amount} messages")
+
+        # Check bot permissions first
+        if not interaction.channel.permissions_for(interaction.guild.me).manage_messages:
             await interaction.response.send_message(
-                "❌ Amount must be positive!",
+                "❌ I don't have permission to delete messages in this channel!",
                 ephemeral=True
             )
             return
-            
-        if amount > 1000:
+
+        # Check user permissions with owner bypass
+        if not self.is_owner_or_has_perms(interaction):
             await interaction.response.send_message(
-                "❌ Cannot delete more than 1000 messages at once!",
+                "❌ You need the 'Manage Messages' permission to use this command!",
                 ephemeral=True
             )
             return
-            
+        
         try:
-            # Defer response since this might take a while
-            await interaction.response.defer(ephemeral=True)
-            
-            # Delete messages
-            def check(message):
-                return user is None or message.author == user
-                
-            deleted = await interaction.channel.purge(
-                limit=amount,
-                check=check,
-                reason=f"Purge command used by {interaction.user}"
-            )
-            
-            # Send result
-            await interaction.followup.send(
-                f"✨ Deleted {len(deleted)} messages!",
+            # Validate input
+            if amount <= 0 or amount > 1000:
+                logger.warning(f"Invalid amount ({amount}) specified for purge command")
+                await interaction.response.send_message(
+                    "❌ Please specify a number between 1 and 1000.",
+                    ephemeral=True
+                )
+                return
+
+            # Send immediate acknowledgment
+            await interaction.response.send_message(
+                f"🗑️ Deleting {amount} messages...",
                 ephemeral=True
             )
             
-            logger.info(
-                f"Admin {interaction.user.id} purged {len(deleted)} messages in "
-                f"channel {interaction.channel.id}"
-            )
+            # Get messages to delete
+            messages_to_delete = []
+            async for message in interaction.channel.history(limit=amount):
+                if user is None or message.author == user:
+                    messages_to_delete.append(message)
             
-        except discord.Forbidden:
-            await interaction.followup.send(
-                "❌ I don't have permission to delete messages!",
-                ephemeral=True
+            logger.debug(f"Found {len(messages_to_delete)} messages to delete")
+            
+            if not messages_to_delete:
+                await interaction.edit_original_response(
+                    content="❌ No messages found to delete!"
+                )
+                return
+            
+            # Delete messages in chunks to avoid rate limits
+            chunk_size = 100
+            deleted_count = 0
+            
+            for i in range(0, len(messages_to_delete), chunk_size):
+                chunk = messages_to_delete[i:i + chunk_size]
+                try:
+                    await interaction.channel.delete_messages(chunk)
+                    deleted_count += len(chunk)
+                    logger.debug(f"Deleted chunk of {len(chunk)} messages")
+                    
+                    # Update progress message every chunk
+                    progress = f"🗑️ Deleted {deleted_count}/{len(messages_to_delete)} messages..."
+                    await interaction.edit_original_response(content=progress)
+                    
+                    await asyncio.sleep(1)  # Small delay between chunks
+                except discord.HTTPException as e:
+                    if 'message_id' in str(e):  # Message too old
+                        logger.warning(f"Skipped old messages: {e}")
+                        continue
+                    logger.error(f"HTTP error while deleting messages: {e}")
+                    raise
+            
+            # Send completion message
+            if deleted_count > 0:
+                final_message = (
+                    f"✨ Successfully deleted {deleted_count} message{'s' if deleted_count != 1 else ''}"
+                    f"{f' from {user.display_name}' if user else ''}!"
+                )
+                await interaction.edit_original_response(content=final_message)
+                logger.info(f"Successfully purged {deleted_count} messages")
+            else:
+                await interaction.edit_original_response(
+                    content="❌ No messages were deleted. They might be too old (>14 days)."
+                )
+                logger.warning("No messages were deleted during purge")
+            
+        except discord.Forbidden as e:
+            logger.error(f"Permission error during purge: {e}")
+            await interaction.edit_original_response(
+                content="❌ I don't have permission to delete messages!"
             )
         except Exception as e:
-            logger.error(f"Error purging messages: {e}")
-            await interaction.followup.send(
-                "❌ Failed to purge messages!",
-                ephemeral=True
+            logger.error(f"Unexpected error during purge: {e}", exc_info=True)
+            await interaction.edit_original_response(
+                content="❌ An error occurred while purging messages!"
             )
             
 async def setup(bot):

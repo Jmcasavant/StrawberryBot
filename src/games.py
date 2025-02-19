@@ -3,6 +3,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import random
+from typing import Optional, List, Union
 import asyncio
 
 from utils.core import COLORS, setup_logger
@@ -74,13 +75,14 @@ class Games(commands.Cog):
             red_chance = (red_numbers / total_numbers) * 100
             black_chance = (black_numbers / total_numbers) * 100
             green_chance = (green_numbers / total_numbers) * 100
+            number_chance = (1 / total_numbers) * 100
             
             # Show betting options
             embed = discord.Embed(
                 title="🎰 Strawberry Roulette",
                 description=(
                     f"**{interaction.user.display_name}** is betting 🍓 **{bet:,}** strawberries\n"
-                    "Choose your bet:"
+                    "Choose what to bet on:"
                 ),
                 color=COLORS['economy']
             )
@@ -88,20 +90,35 @@ class Games(commands.Cog):
             embed.add_field(
                 name="Color Bets",
                 value=(
-                    f"🔴 Red (2x payout, {red_chance:.0f}%)\n"
-                    f"⚫ Black (2x payout, {black_chance:.0f}%)\n"
-                    f"🟢 Green (35x payout, {green_chance:.0f}%)"
+                    f"🔴 Red (2x, {red_chance:.1f}% chance)\n"
+                    f"⚫ Black (2x, {black_chance:.1f}% chance)\n"
+                    f"🟢 Green (35x, {green_chance:.1f}% chance)"
                 ),
                 inline=False
             )
             
-            # Add potential winnings
             embed.add_field(
-                name="Potential Winnings",
+                name="Number Bet",
                 value=(
-                    f"🔴 Red: 🍓 **{bet * 2:,}**\n"
-                    f"⚫ Black: 🍓 **{bet * 2:,}**\n"
-                    f"🟢 Green: 🍓 **{bet * 35:,}**"
+                    f"Type any number 0-36 (35x, {number_chance:.1f}% chance)\n"
+                    "Examples: 0, 7, 23, 36"
+                ),
+                inline=False
+            )
+            
+            # Add expected value information
+            red_ev = (red_chance/100 * bet * 2) - bet
+            black_ev = (black_chance/100 * bet * 2) - bet
+            green_ev = (green_chance/100 * bet * 35) - bet
+            number_ev = (number_chance/100 * bet * 35) - bet
+            
+            embed.add_field(
+                name="Expected Value",
+                value=(
+                    f"🔴 Red: {red_ev:+.1f}\n"
+                    f"⚫ Black: {black_ev:+.1f}\n"
+                    f"🟢 Green: {green_ev:+.1f}\n"
+                    f"Number: {number_ev:+.1f}"
                 ),
                 inline=False
             )
@@ -126,22 +143,55 @@ class Games(commands.Cog):
                     reaction.message.id == selection_msg.id
                 )
                 
+            def message_check(m):
+                if m.author != interaction.user or m.channel != interaction.channel:
+                    return False
+                try:
+                    num = int(m.content)
+                    return 0 <= num <= 36
+                except ValueError:
+                    return False
+                    
             try:
-                # Wait for reaction
-                reaction, _ = await self.bot.wait_for('reaction_add', timeout=30.0, check=reaction_check)
-                emoji = str(reaction.emoji)
-                bet_choice = {
-                    "🔴": "red",
-                    "⚫": "black",
-                    "🟢": "green"
-                }[emoji]
+                # Wait for either a reaction or a message
+                tasks = [
+                    asyncio.create_task(self.bot.wait_for('reaction_add', timeout=30.0, check=reaction_check)),
+                    asyncio.create_task(self.bot.wait_for('message', timeout=30.0, check=message_check))
+                ]
                 
+                done, pending = await asyncio.wait(
+                    tasks,
+                    return_when=asyncio.FIRST_COMPLETED
+                )
+                
+                # Get the result and cancel pending tasks
+                result = done.pop().result()
+                for task in pending:
+                    task.cancel()
+                    
                 # Clean up selection message
                 try:
                     await selection_msg.delete()
                 except:
                     pass
                     
+                if isinstance(result, tuple):  # Reaction result
+                    reaction, _ = result
+                    emoji = str(reaction.emoji)
+                    bet_type = 'color'
+                    bet_choice = {
+                        "🔴": "red",
+                        "⚫": "black",
+                        "🟢": "green"
+                    }[emoji]
+                else:  # Message result
+                    bet_type = 'number'
+                    bet_choice = int(result.content)
+                    try:
+                        await result.delete()  # Try to delete the number message
+                    except:
+                        pass
+                        
             except asyncio.TimeoutError:
                 try:
                     await selection_msg.clear_reactions()
@@ -163,15 +213,10 @@ class Games(commands.Cog):
             
             spin_msg = await interaction.channel.send(embed=embed)
             
-            # Enhanced spinning animation
-            for i in range(3):
-                await asyncio.sleep(0.7)
-                temp_number = random.randint(0, 36)
-                temp_color = wheel[temp_number]
-                embed.description = (
-                    f"**{interaction.user.display_name}** bets 🍓 **{bet:,}** on **{bet_choice}**\n"
-                    f"Spinning... {temp_number} ({temp_color})"
-                )
+            # Simulate wheel spin with animation
+            for _ in range(3):
+                await asyncio.sleep(1)
+                embed.description = embed.description.rstrip('.') + "."
                 await spin_msg.edit(embed=embed)
                 
             # Get result
@@ -180,11 +225,18 @@ class Games(commands.Cog):
             
             # Calculate winnings
             won = False
-            if bet_choice == result_color:
-                winnings = bet * (35 if result_color == 'green' else 2)
-                won = True
-            else:
-                winnings = 0
+            if bet_type == 'color':
+                if bet_choice == result_color:
+                    winnings = bet * (35 if result_color == 'green' else 2)
+                    won = True
+                else:
+                    winnings = 0
+            else:  # number bet
+                if bet_choice == result_number:
+                    winnings = bet * 35
+                    won = True
+                else:
+                    winnings = 0
                     
             # Update user's balance
             if won:
@@ -222,16 +274,6 @@ class Games(commands.Cog):
                 name="New Balance",
                 value=f"🍓 **{new_balance:,}**",
                 inline=True
-            )
-            
-            # Add stats
-            embed.add_field(
-                name="Odds",
-                value=(
-                    f"Chance to win: **{green_chance if bet_choice == 'green' else red_chance:.0f}%**\n"
-                    f"Potential win: 🍓 **{bet * (35 if bet_choice == 'green' else 2):,}**"
-                ),
-                inline=False
             )
             
             # Add a random footer message

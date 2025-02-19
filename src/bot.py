@@ -15,14 +15,11 @@ from utils.strawberry_game import StrawberryGame
 from utils.core import (
     INTENTS,
     ACTIVITY,
-    COMMAND_PREFIX,
     STRAWBERRY_MESSAGES,
     STRAWBERRY_LAYOUTS,
     MIN_RANDOM_STRAWBERRIES,
     MAX_RANDOM_STRAWBERRIES,
     COLORS,
-    COMMAND_GROUPS,
-    COMMAND_DESCRIPTIONS,
     setup_logger
 )
 
@@ -33,29 +30,46 @@ class StrawberryBot(commands.Bot):
     
     def __init__(self):
         super().__init__(
-            command_prefix=commands.when_mentioned_or(COMMAND_PREFIX),
+            command_prefix=None,  # No prefix needed for slash commands
             intents=INTENTS,
             activity=ACTIVITY,
             case_insensitive=True
         )
         self.game = StrawberryGame()
         
-        # Remove default help command
-        self.remove_command('help')
-        
     async def setup_hook(self) -> None:
         """Initialize the bot and load all cogs."""
-        # Load all cogs
-        await self.load_extensions()
-        
-        # Start game auto-save
-        await self.game.start()
-        
-        # Sync all commands
-        await self.tree.sync()
-        
-        logger.info("Bot setup completed")
-        
+        try:
+            # Load all cogs
+            logger.info("Starting to load extensions...")
+            await self.load_extensions()
+            logger.info("Successfully loaded all extensions")
+            
+            # Start game auto-save
+            logger.info("Starting game auto-save...")
+            await self.game.start()
+            logger.info("Game auto-save started")
+            
+            # Sync all commands with detailed logging
+            logger.info("Starting command sync process...")
+            try:
+                synced = await self.tree.sync()
+                logger.info(f"Successfully synced {len(synced)} slash command(s)")
+                for cmd in synced:
+                    logger.info(f"Synced command: {cmd.name}")
+            except Exception as sync_error:
+                logger.error(f"Error during command sync: {sync_error}", exc_info=True)
+                raise
+            
+            # Add error handling for interaction timeouts
+            self.tree.on_error = self.on_app_command_error
+            
+            logger.info("Bot setup completed successfully")
+            
+        except Exception as e:
+            logger.error(f"Critical error during setup: {e}", exc_info=True)
+            raise
+            
     async def close(self) -> None:
         """Clean up and close the bot."""
         # Stop game auto-save
@@ -66,12 +80,16 @@ class StrawberryBot(commands.Bot):
         
     async def load_extensions(self) -> None:
         """Load all cog extensions."""
+        cog_dir = Path(__file__).parent / "cogs"
         for cog in ['admin', 'voice', 'economy', 'games']:
             try:
-                await self.load_extension(f'cogs.{cog}')
-                logger.info(f"Loaded {cog} cog")
+                cog_path = f"cogs.{cog}"
+                logger.info(f"Loading cog from {cog_path}")
+                await self.load_extension(cog_path)
+                logger.info(f"Successfully loaded {cog} cog")
             except Exception as e:
-                logger.error(f"Error loading {cog} cog: {e}")
+                logger.error(f"Error loading {cog} cog: {e}", exc_info=True)
+                raise  # Re-raise to prevent partial loading
                 
     async def on_ready(self) -> None:
         """Called when the bot is ready."""
@@ -80,6 +98,13 @@ class StrawberryBot(commands.Bot):
         # Print some useful info
         logger.info(f"Connected to {len(self.guilds)} guilds")
         logger.info(f"Serving {len(set(self.get_all_members()))} unique users")
+        
+        # Ensure commands are synced
+        try:
+            synced = await self.tree.sync()
+            logger.info(f"Re-synced {len(synced)} slash command(s)")
+        except Exception as e:
+            logger.error(f"Error syncing commands: {e}")
         
         logger.info("Bot is ready!")
         
@@ -99,8 +124,7 @@ class StrawberryBot(commands.Bot):
                 embed = discord.Embed(
                     title="🍓 Thanks for adding Strawberry Bot!",
                     description=(
-                        "Use `/help` to see all commands.\n"
-                        "Start earning strawberries with `/daily`!"
+                        "Use slash commands like `/daily` and `/strawberries` to get started!"
                     ),
                     color=COLORS['success']
                 )
@@ -118,14 +142,10 @@ class StrawberryBot(commands.Bot):
         if message.author.bot:
             return
             
-        # Process commands first
-        await self.process_commands(message)
-        
-        # Check for strawberry mentions (not in commands)
-        if not message.content.startswith(COMMAND_PREFIX):
-            if re.search(r'strawberr(y|ies)', message.content, re.IGNORECASE):
-                await self.send_random_strawberries(message.channel)
-                
+        # Check for strawberry mentions
+        if re.search(r'strawberr(y|ies)', message.content, re.IGNORECASE):
+            await self.send_random_strawberries(message.channel)
+            
     async def send_random_strawberries(self, channel: discord.TextChannel) -> None:
         """Send a random strawberry message."""
         try:
@@ -153,22 +173,42 @@ class StrawberryBot(commands.Bot):
         error: app_commands.AppCommandError
     ) -> None:
         """Handle errors in slash commands."""
-        if isinstance(error, app_commands.CommandOnCooldown):
-            await interaction.response.send_message(
-                f"⏰ Command on cooldown! Try again in {error.retry_after:.1f}s",
-                ephemeral=True
+        error_message = f"Error in command '{interaction.command.name if interaction.command else 'unknown'}': {str(error)}"
+        logger.error(error_message, exc_info=error)
+        
+        try:
+            if isinstance(error, app_commands.CommandOnCooldown):
+                await interaction.response.send_message(
+                    f"⏰ Command on cooldown! Try again in {error.retry_after:.1f}s",
+                    ephemeral=True
+                )
+            elif isinstance(error, app_commands.MissingPermissions):
+                await interaction.response.send_message(
+                    "❌ You don't have permission to use this command!",
+                    ephemeral=True
+                )
+            else:
+                # Check if interaction is already responded to
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "❌ An error occurred! Please try again later.",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        "❌ An error occurred! Please try again later.",
+                        ephemeral=True
+                    )
+        except Exception as e:
+            logger.error(f"Error handling command error: {e}", exc_info=True)
+            
+    async def on_interaction(self, interaction: discord.Interaction):
+        """Log all interactions for debugging."""
+        if interaction.type == discord.InteractionType.application_command:
+            logger.info(
+                f"Received command interaction: {interaction.command.name} from {interaction.user.id}"
             )
-        elif isinstance(error, app_commands.MissingPermissions):
-            await interaction.response.send_message(
-                "❌ You don't have permission to use this command!",
-                ephemeral=True
-            )
-        else:
-            logger.error(f"Error in slash command: {str(error)}", exc_info=error)
-            await interaction.response.send_message(
-                "❌ An error occurred! Please try again later.",
-                ephemeral=True
-            )
+        await super().on_interaction(interaction)
 
 def main():
     """Main entry point for the bot."""
