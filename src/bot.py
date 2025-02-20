@@ -41,30 +41,18 @@ class StrawberryBot(commands.Bot):
         """Initialize the bot and load all cogs."""
         try:
             # Load all cogs
-            logger.info("Starting to load extensions...")
             await self.load_extensions()
-            logger.info("Successfully loaded all extensions")
             
             # Start game auto-save
-            logger.info("Starting game auto-save...")
             await self.game.start()
-            logger.info("Game auto-save started")
             
-            # Sync all commands with detailed logging
-            logger.info("Starting command sync process...")
-            try:
-                synced = await self.tree.sync()
-                logger.info(f"Successfully synced {len(synced)} slash command(s)")
-                for cmd in synced:
-                    logger.info(f"Synced command: {cmd.name}")
-            except Exception as sync_error:
-                logger.error(f"Error during command sync: {sync_error}", exc_info=True)
-                raise
+            # Sync commands
+            await self.tree.sync()
             
             # Add error handling for interaction timeouts
             self.tree.on_error = self.on_app_command_error
             
-            logger.info("Bot setup completed successfully")
+            logger.info("Bot setup completed")
             
         except Exception as e:
             logger.error(f"Critical error during setup: {e}", exc_info=True)
@@ -81,40 +69,24 @@ class StrawberryBot(commands.Bot):
     async def load_extensions(self) -> None:
         """Load all cog extensions."""
         cog_dir = Path(__file__).parent / "cogs"
-        for cog in ['admin', 'voice', 'economy', 'games']:
+        for cog in ['admin', 'voice', 'economy', 'games', 'minecraft']:
             try:
                 cog_path = f"cogs.{cog}"
-                logger.info(f"Loading cog from {cog_path}")
                 await self.load_extension(cog_path)
-                logger.info(f"Successfully loaded {cog} cog")
             except Exception as e:
                 logger.error(f"Error loading {cog} cog: {e}", exc_info=True)
                 raise  # Re-raise to prevent partial loading
                 
     async def on_ready(self) -> None:
         """Called when the bot is ready."""
-        logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
-        
-        # Print some useful info
-        logger.info(f"Connected to {len(self.guilds)} guilds")
-        logger.info(f"Serving {len(set(self.get_all_members()))} unique users")
-        
-        # Ensure commands are synced
-        try:
-            synced = await self.tree.sync()
-            logger.info(f"Re-synced {len(synced)} slash command(s)")
-        except Exception as e:
-            logger.error(f"Error syncing commands: {e}")
-        
-        logger.info("Bot is ready!")
+        logger.info(f"Bot ready - {self.user} ({self.user.id})")
+        logger.info(f"Active in {len(self.guilds)} guilds with {len(set(self.get_all_members()))} users")
         
     async def on_guild_join(self, guild: discord.Guild) -> None:
         """Called when the bot joins a new guild."""
-        logger.info(f"Joined new guild: {guild.name} (ID: {guild.id})")
+        logger.info(f"Joined guild: {guild.name} ({guild.id})")
         
-        # Try to send a welcome message
         try:
-            # Find the first channel we can send messages in
             channel = next((
                 chan for chan in guild.text_channels
                 if chan.permissions_for(guild.me).send_messages
@@ -123,18 +95,14 @@ class StrawberryBot(commands.Bot):
             if channel:
                 embed = discord.Embed(
                     title="🍓 Thanks for adding Strawberry Bot!",
-                    description=(
-                        "Use slash commands like `/daily` and `/strawberries` to get started!"
-                    ),
+                    description="Use slash commands like `/daily` and `/strawberries` to get started!",
                     color=COLORS['success']
                 )
                 await channel.send(embed=embed)
-                
-                # Sync slash commands for the new guild
                 await self.tree.sync(guild=guild)
                 
         except Exception as e:
-            logger.error(f"Error sending welcome message to {guild.name}: {e}")
+            logger.error(f"Error in guild join for {guild.name}: {e}")
             
     async def on_message(self, message: discord.Message) -> None:
         """Handle incoming messages."""
@@ -205,14 +173,13 @@ class StrawberryBot(commands.Bot):
     async def on_interaction(self, interaction: discord.Interaction):
         """Log all interactions for debugging."""
         if interaction.type == discord.InteractionType.application_command:
-            logger.info(
-                f"Received command interaction: {interaction.command.name} from {interaction.user.id}"
+            logger.debug(  # Changed to debug level since this is verbose
+                f"Command: {interaction.command.name} from {interaction.user.id}"
             )
         await super().on_interaction(interaction)
 
 def main():
     """Main entry point for the bot."""
-    # Load environment variables
     load_dotenv()
     token = os.getenv("DISCORD_BOT_TOKEN")
     
@@ -220,12 +187,10 @@ def main():
         logger.error("No Discord bot token found in .env file")
         sys.exit(1)
         
-    # Create and run bot
     bot = StrawberryBot()
     
     try:
-        logger.info("Starting bot...")
-        bot.run(token, log_handler=None)  # Disable discord.py's logging
+        bot.run(token, log_handler=None)
     except Exception as e:
         logger.error(f"Error starting bot: {e}")
         sys.exit(1)

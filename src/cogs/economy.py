@@ -15,11 +15,10 @@ class Economy(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
-        logger.info("Economy cog initialized")
         
     async def cog_load(self) -> None:
         """Called when the cog is loaded."""
-        logger.info("Economy cog loaded")
+        pass
         
     @app_commands.command(name='strawberries', description='Check strawberry balance and stats')
     @app_commands.describe(user="The user to check (optional)")
@@ -29,9 +28,7 @@ class Economy(commands.Cog):
         user: Optional[discord.User] = None
     ) -> None:
         """Check strawberry balance and stats."""
-        logger.info(f"Strawberries command invoked by {interaction.user.id}")
         try:
-            # Send immediate acknowledgment
             await interaction.response.send_message("Fetching strawberry data...", ephemeral=True)
             
             target = user or interaction.user
@@ -69,12 +66,10 @@ class Economy(commands.Cog):
                     inline=True
                 )
                 
-            # Edit the original message with the complete data
             await interaction.edit_original_response(embed=embed)
-            logger.info(f"Successfully displayed strawberries for {target.id}")
                 
         except Exception as e:
-            logger.error(f"Error checking strawberries: {e}", exc_info=True)
+            logger.error(f"Balance check error for {interaction.user.id}: {e}")
             error_msg = "❌ Failed to retrieve strawberry data!"
             try:
                 await interaction.edit_original_response(content=error_msg)
@@ -85,12 +80,9 @@ class Economy(commands.Cog):
     @app_commands.checks.cooldown(1, 86400)  # Once per day
     async def daily(self, interaction: discord.Interaction) -> None:
         """Claim daily strawberry reward."""
-        logger.info(f"Daily command invoked by {interaction.user.id}")
         try:
-            # Send immediate acknowledgment
             await interaction.response.send_message("Claiming daily reward...", ephemeral=True)
             
-            # Get reward amount with streak bonus
             reward = await self.bot.game.claim_daily(interaction.user.id)
             
             if reward > 0:
@@ -103,7 +95,6 @@ class Economy(commands.Cog):
                     color=COLORS['success']
                 )
                 
-                # Add streak info
                 if streak > 1:
                     embed.add_field(
                         name="Streak",
@@ -119,15 +110,13 @@ class Economy(commands.Cog):
                     )
                     
                 await interaction.edit_original_response(embed=embed)
-                logger.info(f"Daily reward claimed successfully by {interaction.user.id}")
             else:
                 await interaction.edit_original_response(
                     content="❌ You've already claimed your daily reward!"
                 )
-                logger.info(f"Daily reward already claimed by {interaction.user.id}")
                     
         except Exception as e:
-            logger.error(f"Error claiming daily reward: {e}", exc_info=True)
+            logger.error(f"Daily claim error for {interaction.user.id}: {e}")
             error_msg = "❌ Failed to claim daily reward!"
             try:
                 await interaction.edit_original_response(content=error_msg)

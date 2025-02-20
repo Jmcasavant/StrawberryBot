@@ -198,7 +198,11 @@ class Admin(commands.Cog):
             
             # Get messages to delete
             messages_to_delete = []
-            async for message in interaction.channel.history(limit=amount):
+            search_limit = amount * 3 if user else amount  # Search more messages if filtering by user
+            
+            async for message in interaction.channel.history(limit=search_limit):
+                if len(messages_to_delete) >= amount:
+                    break
                 if user is None or message.author == user:
                     messages_to_delete.append(message)
             

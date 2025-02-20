@@ -12,6 +12,21 @@ logger = setup_logger(__name__)
 class Games(commands.Cog):
     """Games and fun commands."""
     
+    # Roulette wheel configuration
+    WHEEL = {
+        0: 'green',  # Two green slots for 2% chance
+        1: 'green',
+        **{i: 'red' for i in range(2, 51)},      # 49 red slots for 49% chance
+        **{i: 'black' for i in range(51, 100)}   # 49 black slots for 49% chance
+    }
+    
+    # Color emoji mapping
+    COLOR_EMOJIS = {
+        'red': '🔴',
+        'black': '⚫',
+        'green': '🟢'
+    }
+    
     def __init__(self, bot):
         self.bot = bot
         self.roulette_games = {}
@@ -51,36 +66,23 @@ class Games(commands.Cog):
         self.roulette_games[interaction.user.id] = True
         
         try:
-            # Define roulette wheel
-            wheel = {
-                0: 'green',
-                32: 'red', 19: 'red', 21: 'red', 25: 'red', 34: 'red',
-                27: 'red', 36: 'red', 30: 'red', 23: 'red', 5: 'red',
-                16: 'red', 1: 'red', 14: 'red', 9: 'red', 18: 'red',
-                7: 'red', 12: 'red', 3: 'red',
-                26: 'black', 35: 'black', 28: 'black', 22: 'black',
-                29: 'black', 31: 'black', 20: 'black', 33: 'black',
-                24: 'black', 10: 'black', 8: 'black', 11: 'black',
-                13: 'black', 6: 'black', 17: 'black', 2: 'black',
-                4: 'black', 15: 'black'
-            }
-            
             # Calculate chances
-            total_numbers = 37  # 0-36
-            red_numbers = len([n for n in wheel if wheel[n] == 'red'])
-            black_numbers = len([n for n in wheel if wheel[n] == 'black'])
-            green_numbers = len([n for n in wheel if wheel[n] == 'green'])
+            total_numbers = 100  # 98 red/black + 2 green
+            red_numbers = len([n for n in self.WHEEL if self.WHEEL[n] == 'red'])
+            black_numbers = len([n for n in self.WHEEL if self.WHEEL[n] == 'black'])
+            green_numbers = len([n for n in self.WHEEL if self.WHEEL[n] == 'green'])
             
             red_chance = (red_numbers / total_numbers) * 100
             black_chance = (black_numbers / total_numbers) * 100
             green_chance = (green_numbers / total_numbers) * 100
+            number_chance = (1 / total_numbers) * 100
             
             # Show betting options
             embed = discord.Embed(
                 title="🎰 Strawberry Roulette",
                 description=(
                     f"**{interaction.user.display_name}** is betting 🍓 **{bet:,}** strawberries\n"
-                    "Choose your bet:"
+                    "Choose what to bet on:"
                 ),
                 color=COLORS['economy']
             )
@@ -88,9 +90,9 @@ class Games(commands.Cog):
             embed.add_field(
                 name="Color Bets",
                 value=(
-                    f"🔴 Red (2x payout, {red_chance:.0f}%)\n"
-                    f"⚫ Black (2x payout, {black_chance:.0f}%)\n"
-                    f"🟢 Green (35x payout, {green_chance:.0f}%)"
+                    f"🔴 Red (2x, {red_chance:.1f}% chance)\n"
+                    f"⚫ Black (2x, {black_chance:.1f}% chance)\n"
+                    f"🟢 Green (50x, {green_chance:.1f}% chance)"
                 ),
                 inline=False
             )
@@ -101,7 +103,7 @@ class Games(commands.Cog):
                 value=(
                     f"🔴 Red: 🍓 **{bet * 2:,}**\n"
                     f"⚫ Black: 🍓 **{bet * 2:,}**\n"
-                    f"🟢 Green: 🍓 **{bet * 35:,}**"
+                    f"🟢 Green: 🍓 **{bet * 50:,}**"
                 ),
                 inline=False
             )
@@ -111,10 +113,10 @@ class Games(commands.Cog):
             
             # Add reaction options
             try:
-                for emoji in ["🔴", "⚫", "🟢"]:
+                for emoji in self.COLOR_EMOJIS.values():
                     await selection_msg.add_reaction(emoji)
-            except Exception as e:
-                logger.error(f"Error adding reactions: {e}")
+            except discord.HTTPException as e:
+                logger.error(f"Failed to add reactions: {e}")
                 await interaction.followup.send("❌ Error setting up the game!", ephemeral=True)
                 del self.roulette_games[interaction.user.id]
                 return
@@ -122,132 +124,169 @@ class Games(commands.Cog):
             def reaction_check(reaction, user):
                 return (
                     user == interaction.user and
-                    str(reaction.emoji) in ["🔴", "⚫", "🟢"] and
+                    str(reaction.emoji) in self.COLOR_EMOJIS.values() and
                     reaction.message.id == selection_msg.id
                 )
                 
             try:
-                # Wait for reaction
+                # Wait for reaction with proper timeout handling
                 reaction, _ = await self.bot.wait_for('reaction_add', timeout=30.0, check=reaction_check)
                 emoji = str(reaction.emoji)
                 bet_choice = {
-                    "🔴": "red",
-                    "⚫": "black",
-                    "🟢": "green"
+                    emoji: color for color, emoji in self.COLOR_EMOJIS.items()
                 }[emoji]
+                bet_emoji = self.COLOR_EMOJIS[bet_choice]
                 
                 # Clean up selection message
                 try:
                     await selection_msg.delete()
-                except:
-                    pass
+                except discord.NotFound:
+                    pass  # Message already deleted
+                except discord.HTTPException as e:
+                    logger.warning(f"Failed to delete selection message: {e}")
                     
             except asyncio.TimeoutError:
                 try:
                     await selection_msg.clear_reactions()
-                    await selection_msg.edit(content="❌ Bet cancelled - no choice made in time!", embed=None)
-                except:
-                    await interaction.followup.send("❌ Bet cancelled - no choice made in time!")
-                del self.roulette_games[interaction.user.id]
-                return
+                    await selection_msg.edit(
+                        content="❌ Bet cancelled - no choice made in time!",
+                        embed=None
+                    )
+                except discord.NotFound:
+                    pass  # Message already deleted
+                except discord.HTTPException as e:
+                    logger.warning(f"Failed to clean up timed out message: {e}")
+                    await interaction.followup.send(
+                        "❌ Bet cancelled - no choice made in time!",
+                        ephemeral=True
+                    )
+                finally:
+                    del self.roulette_games[interaction.user.id]
+                    return
                 
             # Spinning animation
             embed = discord.Embed(
                 title="🎰 Strawberry Roulette",
                 description=(
-                    f"**{interaction.user.display_name}** bets 🍓 **{bet:,}** on **{bet_choice}**\n"
+                    f"**{interaction.user.display_name}** bets 🍓 **{bet:,}** on **{bet_emoji}**\n"
                     "Spinning the wheel..."
                 ),
                 color=COLORS['economy']
             )
             
-            spin_msg = await interaction.channel.send(embed=embed)
-            
-            # Enhanced spinning animation
-            for i in range(3):
-                await asyncio.sleep(0.7)
-                temp_number = random.randint(0, 36)
-                temp_color = wheel[temp_number]
-                embed.description = (
-                    f"**{interaction.user.display_name}** bets 🍓 **{bet:,}** on **{bet_choice}**\n"
-                    f"Spinning... {temp_number} ({temp_color})"
+            try:
+                spin_msg = await interaction.channel.send(embed=embed)
+                
+                # Enhanced spinning animation with random numbers and colors
+                for _ in range(3):
+                    await asyncio.sleep(0.7)
+                    temp_number = random.randint(0, 99)
+                    temp_color = self.WHEEL[temp_number]
+                    temp_emoji = self.COLOR_EMOJIS[temp_color]
+                    embed.description = (
+                        f"**{interaction.user.display_name}** bets 🍓 **{bet:,}** on **{bet_emoji}**\n"
+                        f"Spinning... {temp_number} ({temp_emoji})"
+                    )
+                    await spin_msg.edit(embed=embed)
+                    
+                # Get result with proper error handling
+                result_number = random.randint(0, 99)
+                result_color = self.WHEEL[result_number]
+                result_emoji = self.COLOR_EMOJIS[result_color]
+                
+                # Calculate winnings
+                won = bet_choice == result_color
+                winnings = bet * (50 if result_color == 'green' else 2) if won else 0
+                
+                # Update user's balance with error handling
+                try:
+                    if won:
+                        await self.bot.game.add_strawberries(interaction.user.id, winnings)
+                    else:
+                        await self.bot.game.remove_strawberries(interaction.user.id, bet)
+                except Exception as e:
+                    logger.error(f"Failed to update balance for user {interaction.user.id}: {e}")
+                    await interaction.followup.send(
+                        "❌ Error updating your balance. Please contact an administrator.",
+                        ephemeral=True
+                    )
+                    return
+                    
+                # Get new balance
+                try:
+                    new_balance = self.bot.game.get_player_data(interaction.user.id)['strawberries']
+                except Exception as e:
+                    logger.error(f"Failed to get new balance for user {interaction.user.id}: {e}")
+                    new_balance = "Unknown"
+                
+                # Create result embed
+                embed = discord.Embed(
+                    title="🎰 Roulette Results",
+                    description=(
+                        f"The ball landed on **{result_number}** ({result_emoji})\n"
+                        f"**{interaction.user.display_name}**'s bet: {bet_emoji}"
+                    ),
+                    color=COLORS['success'] if won else COLORS['error']
                 )
+                
+                if won:
+                    embed.add_field(
+                        name="🎉 YOU WON! 🎉",
+                        value=f"+🍓 **{winnings:,}**",
+                        inline=True
+                    )
+                else:
+                    embed.add_field(
+                        name="😢 You Lost",
+                        value=f"-🍓 **{bet:,}**",
+                        inline=True
+                    )
+                    
+                embed.add_field(
+                    name="New Balance",
+                    value=f"🍓 **{new_balance:,}**" if isinstance(new_balance, int) else "❌ Error getting balance",
+                    inline=True
+                )
+                
+                # Add stats with proper percentage formatting
+                win_chance = 2.0 if bet_choice == 'green' else 49.0
+                potential_win = bet * (50 if bet_choice == 'green' else 2)
+                embed.add_field(
+                    name="Odds",
+                    value=(
+                        f"Chance to win: **{win_chance:.1f}%**\n"
+                        f"Potential win: 🍓 **{potential_win:,}**"
+                    ),
+                    inline=False
+                )
+                
+                # Add a random footer message
+                footer_messages = [
+                    "Better luck next time! 🍀",
+                    "The house always wins... or does it? 🤔",
+                    "Time to go double or nothing! 💰",
+                    "That was a close one! 😅",
+                    "Keep rolling! 🎲",
+                    "Fortune favors the bold! ⚔️",
+                    "May the odds be ever in your favor! 🎯"
+                ]
+                embed.set_footer(text=random.choice(footer_messages))
+                
                 await spin_msg.edit(embed=embed)
                 
-            # Get result
-            result_number = random.randint(0, 36)
-            result_color = wheel[result_number]
-            
-            # Calculate winnings
-            won = False
-            if bet_choice == result_color:
-                winnings = bet * (35 if result_color == 'green' else 2)
-                won = True
-            else:
-                winnings = 0
-                    
-            # Update user's balance
-            if won:
-                await self.bot.game.add_strawberries(interaction.user.id, winnings)
-            else:
-                await self.bot.game.remove_strawberries(interaction.user.id, bet)
-                
-            # Get new balance
-            new_balance = self.bot.game.get_player_data(interaction.user.id)['strawberries']
-            
-            # Create result embed
-            embed = discord.Embed(
-                title="🎰 Roulette Results",
-                description=(
-                    f"The ball landed on **{result_number}** ({result_color})\n"
-                    f"**{interaction.user.display_name}**'s bet: {bet_choice}"
-                ),
-                color=COLORS['success'] if won else COLORS['error']
-            )
-            
-            if won:
-                embed.add_field(
-                    name="🎉 YOU WON! 🎉",
-                    value=f"+🍓 **{winnings:,}**",
-                    inline=True
+            except discord.HTTPException as e:
+                logger.error(f"Discord API error during roulette game: {e}")
+                await interaction.followup.send(
+                    "❌ Error displaying game results. Please try again.",
+                    ephemeral=True
                 )
-            else:
-                embed.add_field(
-                    name="😢 You Lost",
-                    value=f"-🍓 **{bet:,}**",
-                    inline=True
+            except Exception as e:
+                logger.error(f"Unexpected error during roulette game: {e}")
+                await interaction.followup.send(
+                    "❌ An unexpected error occurred. Please try again.",
+                    ephemeral=True
                 )
                 
-            embed.add_field(
-                name="New Balance",
-                value=f"🍓 **{new_balance:,}**",
-                inline=True
-            )
-            
-            # Add stats
-            embed.add_field(
-                name="Odds",
-                value=(
-                    f"Chance to win: **{green_chance if bet_choice == 'green' else red_chance:.0f}%**\n"
-                    f"Potential win: 🍓 **{bet * (35 if bet_choice == 'green' else 2):,}**"
-                ),
-                inline=False
-            )
-            
-            # Add a random footer message
-            footer_messages = [
-                "Better luck next time! 🍀",
-                "The house always wins... or does it? 🤔",
-                "Time to go double or nothing! 💰",
-                "That was a close one! 😅",
-                "Keep rolling! 🎲",
-                "Fortune favors the bold! ⚔️",
-                "May the odds be ever in your favor! 🎯"
-            ]
-            embed.set_footer(text=random.choice(footer_messages))
-            
-            await spin_msg.edit(embed=embed)
-            
         finally:
             # Clean up game state
             if interaction.user.id in self.roulette_games:
