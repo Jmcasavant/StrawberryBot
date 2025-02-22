@@ -29,7 +29,6 @@ class Admin(commands.Cog):
         user="The user to set strawberries for",
         amount="Amount to set their strawberries to"
     )
-    @app_commands.default_permissions(administrator=True)
     async def set(
         self,
         interaction: discord.Interaction,
