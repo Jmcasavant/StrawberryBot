@@ -31,16 +31,28 @@ class Minecraft(commands.GroupCog, group_name="mc"):
     def __init__(self, bot):
         self.bot = bot
         self.is_connected = False
+        self.rcon = None
+        # Initialize RCON connection in cog_load instead of __init__
+        logger.info("Minecraft cog initialized")
+        
+    async def cog_load(self) -> None:
+        """Called when the cog is loaded."""
         try:
-            self.rcon = RCONClient(RCON_CONFIG['ip'], RCON_CONFIG['port'])
-            self.is_connected = self.rcon.login(RCON_CONFIG['password'])
-            if not self.is_connected:
-                logger.warning("Failed to connect to Minecraft server - check credentials")
+            # Add timeout to RCON connection
+            async with asyncio.timeout(5.0):  # 5 second timeout
+                self.rcon = RCONClient(RCON_CONFIG['ip'], RCON_CONFIG['port'])
+                self.is_connected = self.rcon.login(RCON_CONFIG['password'])
+                if not self.is_connected:
+                    logger.warning("Failed to connect to Minecraft server - check credentials")
+        except asyncio.TimeoutError:
+            logger.warning("Timeout while connecting to Minecraft server")
         except ConnectionRefusedError:
             logger.warning(f"Could not connect to Minecraft server - {RCON_CONFIG['ip']}:{RCON_CONFIG['port']}")
         except Exception as e:
             logger.error(f"Minecraft server connection error: {e}")
-            
+        
+        logger.info("Minecraft cog loaded")
+
     def is_admin_or_owner(self, interaction: discord.Interaction) -> bool:
         """Check if user is owner, MC server owner, or has admin permissions."""
         MC_SERVER_OWNER = 231261911998660609  # Minecraft server owner's ID

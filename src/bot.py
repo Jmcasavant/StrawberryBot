@@ -20,8 +20,10 @@ from utils.core import (
     MIN_RANDOM_STRAWBERRIES,
     MAX_RANDOM_STRAWBERRIES,
     COLORS,
-    setup_logger
+    setup_logger,
+    OWNER_ID
 )
+from utils.bug_tracker import BugTracker
 
 logger = setup_logger(__name__)
 
@@ -30,29 +32,69 @@ class StrawberryBot(commands.Bot):
     
     def __init__(self):
         super().__init__(
-            command_prefix=None,  # No prefix needed for slash commands
+            command_prefix="!",  # Fallback prefix
             intents=INTENTS,
-            activity=ACTIVITY,
-            case_insensitive=True
+            activity=ACTIVITY
         )
+        
+        # Initialize game state
         self.game = StrawberryGame()
+        
+        # Initialize bug tracker
+        self.bug_tracker = BugTracker()
+        
+        # Store the bot's owner ID
+        self.owner_id = OWNER_ID
         
     async def setup_hook(self) -> None:
         """Initialize the bot and load all cogs."""
         try:
-            # Load all cogs
-            await self.load_extensions()
+            logger.info("Starting bot setup...")
             
-            # Start game auto-save
-            await self.game.start()
+            # Load cogs one at a time with error handling
+            for cog in ['admin', 'economy', 'games', 'voice', 'minecraft']:
+                try:
+                    logger.info(f"Loading {cog} cog...")
+                    cog_path = f"cogs.{cog}"
+                    await self.load_extension(cog_path)
+                    logger.info(f"Successfully loaded {cog} cog")
+                except Exception as e:
+                    logger.error(f"Failed to load {cog} cog: {e}", exc_info=True)
+                    if cog in ['admin', 'economy', 'games']:  # Critical cogs
+                        raise  # Re-raise for critical cogs
+                    else:
+                        logger.warning(f"Continuing without {cog} cog")
             
-            # Sync commands
-            await self.tree.sync()
+            # Start game auto-save with timeout
+            try:
+                logger.info("Starting game auto-save...")
+                async with asyncio.timeout(5.0):  # 5 second timeout
+                    await self.game.start()
+                logger.info("Game auto-save started successfully")
+            except asyncio.TimeoutError:
+                logger.error("Timeout while starting game auto-save")
+                raise
+            except Exception as e:
+                logger.error(f"Failed to start game auto-save: {e}", exc_info=True)
+                raise
+            
+            # Sync commands with timeout
+            try:
+                logger.info("Syncing commands...")
+                async with asyncio.timeout(10.0):  # 10 second timeout
+                    await self.tree.sync()
+                logger.info("Commands synced successfully")
+            except asyncio.TimeoutError:
+                logger.error("Timeout while syncing commands")
+                raise
+            except Exception as e:
+                logger.error(f"Failed to sync commands: {e}", exc_info=True)
+                raise
             
             # Add error handling for interaction timeouts
             self.tree.on_error = self.on_app_command_error
             
-            logger.info("Bot setup completed")
+            logger.info("Bot setup completed successfully")
             
         except Exception as e:
             logger.error(f"Critical error during setup: {e}", exc_info=True)
@@ -69,7 +111,7 @@ class StrawberryBot(commands.Bot):
     async def load_extensions(self) -> None:
         """Load all cog extensions."""
         cog_dir = Path(__file__).parent / "cogs"
-        for cog in ['admin', 'voice', 'economy', 'games', 'minecraft']:
+        for cog in ['admin', 'voice', 'economy', 'games', 'minecraft', 'bugs']:
             try:
                 cog_path = f"cogs.{cog}"
                 await self.load_extension(cog_path)

@@ -115,7 +115,7 @@ class BlackjackGame:
 
     def can_split(self, hand: List[Card]) -> bool:
         """Check if a hand can be split."""
-        return len(hand) == 2 and hand[0].value == hand[1].value
+        return len(hand) == 2 and hand[0].value == hand[1].value  # Check values instead of ranks
         
     def split_hand(self) -> None:
         """Split the player's hand into two separate hands."""
@@ -125,9 +125,9 @@ class BlackjackGame:
         # Create split hand with second card
         self.player_split_hand = [self.player_hand.pop()]
         
-        # Deal new cards to both hands
+        # Deal one new card to each hand
         self.player_hand.append(self.deal_card())
-        self.player_hand.append(self.deal_card())
+        self.player_split_hand.append(self.deal_card())
 
     def has_soft_11(self, hand: List[Card]) -> bool:
         """Check if the hand has a soft 11 (Ace + any card)."""
@@ -141,6 +141,28 @@ class BlackjackGame:
     def can_double_down(self, hand: List[Card]) -> bool:
         """Check if a hand can be doubled down (any initial two cards)."""
         return len(hand) == 2  # Can only double down on initial two cards
+
+    def calculate_hand_with_status(self, hand: List[Card], hide_value: bool = False, dealer_value: Optional[int] = None, game_over: bool = False) -> Tuple[int, str]:
+        """Calculate hand value and return status indicator if applicable."""
+        value = self.calculate_hand(hand)
+        status = ""
+        
+        if not hide_value:
+            if value > 21:
+                status = "   `🔴 BUST`"  # Red indicator
+            elif value == 21 and len(hand) == 2:
+                status = "   `🟡 BJ`"    # Yellow indicator
+            elif game_over and dealer_value is not None:
+                if value == dealer_value and value <= 21:
+                    status = "   `⚪ PUSH`"  # White indicator
+                elif value <= 21 and dealer_value > 21:
+                    status = "   `🟢 WIN`"   # Green indicator
+                elif value <= 21 and value > dealer_value:
+                    status = "   `🟢 WIN`"   # Green indicator
+                elif value <= 21 and value < dealer_value <= 21:
+                    status = "   `🔴 LOSS`"  # Red indicator
+                
+        return value, status
 
 class Games(commands.Cog):
     """Games and fun commands."""
@@ -160,18 +182,46 @@ class Games(commands.Cog):
     BLACK_CHANCE = (len(BLACK_NUMBERS) / TOTAL_NUMBERS) * 100
     GREEN_CHANCE = (len(GREEN_NUMBERS) / TOTAL_NUMBERS) * 100
     
-    # Payout multipliers
+    # Enhanced payout multipliers
     PAYOUT = {
-        'red': 2,
-        'black': 2,
-        'green': 50
+        'red': 2,      # 1:1 payout
+        'black': 2,    # 1:1 payout
+        'green': 50,   # 49:1 payout
+        'even': 2,     # 1:1 payout
+        'odd': 2,      # 1:1 payout
+        'low': 2,      # 1-18 (1:1 payout)
+        'high': 2,     # 19-36 (1:1 payout)
+        'dozen1': 3,   # 1-12 (2:1 payout)
+        'dozen2': 3,   # 13-24 (2:1 payout)
+        'dozen3': 3    # 25-36 (2:1 payout)
     }
     
     # Color emoji mapping
     COLOR_EMOJIS = {
         'red': '🔴',
         'black': '⚫',
-        'green': '🟢'
+        'green': '🟢',
+        'even': '2️⃣',
+        'odd': '1️⃣',
+        'low': '⬇️',
+        'high': '⬆️',
+        'dozen1': '1️⃣',
+        'dozen2': '2️⃣',
+        'dozen3': '3️⃣'
+    }
+    
+    # Betting options descriptions
+    BET_DESCRIPTIONS = {
+        'red': 'Red numbers',
+        'black': 'Black numbers',
+        'green': 'Green (0)',
+        'even': 'Even numbers',
+        'odd': 'Odd numbers',
+        'low': 'Low (1-18)',
+        'high': 'High (19-36)',
+        'dozen1': 'First dozen (1-12)',
+        'dozen2': 'Second dozen (13-24)',
+        'dozen3': 'Third dozen (25-36)'
     }
     
     # Footer messages
@@ -199,7 +249,7 @@ class Games(commands.Cog):
     async def create_bet_embed(self, user: discord.User, bet: int) -> discord.Embed:
         """Create the initial betting embed."""
         embed = discord.Embed(
-            title="Roulette",
+            title="🎰 Strawberry Roulette",
             description=(
                 f"{user.display_name} is betting 🍓 {bet:,}\n"
                 "Choose your bet:"
@@ -207,28 +257,77 @@ class Games(commands.Cog):
             color=COLORS['economy']
         )
         
-        embed.add_field(
-            name="Options",
-            value=(
-                f"Red (2x, {self.RED_CHANCE:.1f}%)\n"
-                f"Black (2x, {self.BLACK_CHANCE:.1f}%)\n"
-                f"Green (50x, {self.GREEN_CHANCE:.1f}%)"
-            ),
-            inline=False
+        # Group betting options by type
+        color_options = (
+            f"🔴 Red (2x, {self.RED_CHANCE:.1f}%)\n"
+            f"⚫ Black (2x, {self.BLACK_CHANCE:.1f}%)\n"
+            f"🟢 Green (50x, {self.GREEN_CHANCE:.1f}%)"
+        )
+        
+        number_options = (
+            "1️⃣ Odd (2x)\n"
+            "2️⃣ Even (2x)\n"
+            "⬇️ Low 1-18 (2x)\n"
+            "⬆️ High 19-36 (2x)"
+        )
+        
+        dozen_options = (
+            "1️⃣ First dozen 1-12 (3x)\n"
+            "2️⃣ Second dozen 13-24 (3x)\n"
+            "3️⃣ Third dozen 25-36 (3x)"
         )
         
         embed.add_field(
-            name="Potential Winnings",
+            name="🎨 Color Bets",
+            value=color_options,
+            inline=True
+        )
+        
+        embed.add_field(
+            name="🔢 Number Bets",
+            value=number_options,
+            inline=True
+        )
+        
+        embed.add_field(
+            name="📊 Dozen Bets",
+            value=dozen_options,
+            inline=True
+        )
+        
+        embed.add_field(
+            name="💰 Potential Winnings",
             value=(
-                f"Red: 🍓 {bet * self.PAYOUT['red']:,}\n"
-                f"Black: 🍓 {bet * self.PAYOUT['black']:,}\n"
-                f"Green: 🍓 {bet * self.PAYOUT['green']:,}"
+                f"Color (Red/Black): 🍓 {bet * self.PAYOUT['red']:,}\n"
+                f"Green: 🍓 {bet * self.PAYOUT['green']:,}\n"
+                f"Even/Odd/High/Low: 🍓 {bet * self.PAYOUT['even']:,}\n"
+                f"Dozens: 🍓 {bet * self.PAYOUT['dozen1']:,}"
             ),
             inline=False
         )
         
         return embed
-        
+
+    def check_win(self, number: int, bet_choice: str) -> bool:
+        """Check if the bet wins based on the number and bet choice."""
+        if bet_choice in ['red', 'black', 'green']:
+            return self.WHEEL[number] == bet_choice
+        elif bet_choice == 'even':
+            return number != 0 and number % 2 == 0
+        elif bet_choice == 'odd':
+            return number != 0 and number % 2 == 1
+        elif bet_choice == 'low':
+            return 1 <= number <= 18
+        elif bet_choice == 'high':
+            return 19 <= number <= 36
+        elif bet_choice == 'dozen1':
+            return 1 <= number <= 12
+        elif bet_choice == 'dozen2':
+            return 13 <= number <= 24
+        elif bet_choice == 'dozen3':
+            return 25 <= number <= 36
+        return False
+
     async def create_result_embed(
         self,
         user: discord.User,
@@ -242,13 +341,13 @@ class Games(commands.Cog):
         """Create the result embed."""
         result_color = self.WHEEL[result_number]
         bet_emoji = self.COLOR_EMOJIS[bet_choice]
-        result_emoji = self.COLOR_EMOJIS[result_color]
+        result_emoji = self.COLOR_EMOJIS[result_color] if result_color in self.COLOR_EMOJIS else '🎲'
         
         embed = discord.Embed(
-            title="Roulette Results",
+            title="🎰 Roulette Results",
             description=(
-                f"Result: {result_number} ({result_emoji})\n"
-                f"{user.display_name}'s bet: {bet_emoji}"
+                f"The ball landed on: **{result_number}** {result_emoji}\n"
+                f"{user.display_name}'s bet: {bet_emoji} {self.BET_DESCRIPTIONS[bet_choice]}"
             ),
             color=COLORS['success'] if won else COLORS['error']
         )
@@ -257,60 +356,28 @@ class Games(commands.Cog):
             # Show net winnings (winnings minus original bet)
             net_winnings = winnings - bet
             embed.add_field(
-                name="Winner!",
+                name="🎉 Winner!",
                 value=f"+🍓 {net_winnings:,}",
                 inline=True
             )
         else:
             embed.add_field(
-                name="Lost",
+                name="❌ Lost",
                 value=f"-🍓 {bet:,}",
                 inline=True
             )
             
         embed.add_field(
-            name="Balance",
+            name="💰 New Balance",
             value=f"🍓 {new_balance:,}",
             inline=True
         )
         
+        # Add a random footer message
+        embed.set_footer(text=random.choice(self.FOOTER_MESSAGES))
+        
         return embed
-        
-    async def spin_animation(
-        self,
-        message: discord.Message,
-        user: discord.User,
-        bet: int,
-        bet_choice: str,
-        bet_emoji: str
-    ) -> Tuple[int, str]:
-        """Run the spinning animation and return the result."""
-        embed = discord.Embed(
-            title="🎰 Strawberry Roulette",
-            description=(
-                f"**{user.display_name}** bets 🍓 **{bet:,}** on **{bet_emoji}**\n"
-                "Spinning the wheel..."
-            ),
-            color=COLORS['economy']
-        )
-        
-        await message.edit(embed=embed)
-        
-        # Animation
-        numbers = list(self.WHEEL.keys())
-        for _ in range(3):
-            await asyncio.sleep(0.7)
-            temp_number = random.choice(numbers)
-            temp_emoji = self.COLOR_EMOJIS[self.WHEEL[temp_number]]
-            embed.description = (
-                f"**{user.display_name}** bets 🍓 **{bet:,}** on **{bet_emoji}**\n"
-                f"Spinning... {temp_number} ({temp_emoji})"
-            )
-            await message.edit(embed=embed)
-            
-        result_number = random.choice(numbers)
-        return result_number, self.WHEEL[result_number]
-        
+
     @app_commands.command(name='roulette', description='Play strawberry roulette')
     @app_commands.describe(bet="Amount of strawberries to bet")
     async def roulette(self, interaction: discord.Interaction, bet: int) -> None:
@@ -342,14 +409,13 @@ class Games(commands.Cog):
             await interaction.response.send_message(embed=embed)
             selection_msg = await interaction.original_response()
             
-            # Add reactions
-            try:
-                for emoji in self.COLOR_EMOJIS.values():
+            # Add reactions for all betting options
+            for emoji in self.COLOR_EMOJIS.values():
+                try:
                     await selection_msg.add_reaction(emoji)
-            except discord.HTTPException as e:
-                logger.error(f"Failed to add reactions: {e}")
-                await interaction.followup.send("❌ Error setting up the game!", ephemeral=True)
-                return
+                except discord.HTTPException as e:
+                    logger.error(f"Failed to add reaction {emoji}: {e}")
+                    continue
             
             def reaction_check(reaction, user):
                 return (
@@ -361,7 +427,7 @@ class Games(commands.Cog):
             try:
                 reaction, _ = await self.bot.wait_for('reaction_add', timeout=30.0, check=reaction_check)
                 emoji = str(reaction.emoji)
-                bet_choice = {emoji: color for color, emoji in self.COLOR_EMOJIS.items()}[emoji]
+                bet_choice = {v: k for k, v in self.COLOR_EMOJIS.items()}[emoji]
                 
                 await selection_msg.delete()
             except asyncio.TimeoutError:
@@ -373,23 +439,15 @@ class Games(commands.Cog):
                 
             # Run game
             spin_msg = await interaction.channel.send("🎰 Spinning...")
-            result_number, result_color = await self.spin_animation(
-                spin_msg,
-                interaction.user,
-                bet,
-                bet_choice,
-                self.COLOR_EMOJIS[bet_choice]
-            )
-            
-            # Calculate results
-            won = bet_choice == result_color
+            result_number = random.randint(0, 36)
+            won = self.check_win(result_number, bet_choice)
             winnings = bet * self.PAYOUT[bet_choice] if won else 0
             
             # Update balance
             if won:
-                await self.bot.game.add_strawberries(interaction.user.id, winnings - bet)  # Add winnings minus original bet
+                await self.bot.game.add_strawberries(interaction.user.id, winnings - bet)
             else:
-                await self.bot.game.remove_strawberries(interaction.user.id, bet)  # Just remove the original bet
+                await self.bot.game.remove_strawberries(interaction.user.id, bet)
                 
             new_balance = self.bot.game.get_player_data(interaction.user.id)['strawberries']
             
@@ -437,74 +495,101 @@ class Games(commands.Cog):
         # Get the active hand
         active_hand = (game.player_split_hand if split_hand_index == 1 
                       else game.player_hand)
-        player_value = game.calculate_hand(active_hand)
-        dealer_value = game.calculate_hand(game.dealer_hand)
         
         embed = discord.Embed(
-            title="Blackjack",
+            title="🎰 Blackjack",
             color=COLORS['economy']
         )
         
-        # Show dealer's hand
+        # Fixed-width separator for visual consistency
+        separator = "─" * 40  # Increased from 20 to 40 to match longest option width
+
+        # Calculate dealer value first for status checks
+        dealer_value = game.calculate_hand(game.dealer_hand) if not hide_dealer else None
+
+        # Show dealer's hand (always first field)
         if insurance_offered:
-            # During insurance offer, show first card (Ace) and hide second
             dealer_hand = game.format_dealer_hand(game.dealer_hand, hide_second=True)
-            dealer_score = "?"  # Still hide total during insurance
+            dealer_score = "11"  # Ace always shows as 11 initially
+            dealer_status = ""
         else:
             dealer_hand = game.format_hand(game.dealer_hand, hide_first=hide_dealer)
-        dealer_score = "?" if hide_dealer else f"**{dealer_value}**"
+            if hide_dealer:
+                dealer_score = "?"
+                dealer_status = ""
+            else:
+                dealer_score, dealer_status = game.calculate_hand_with_status(
+                    game.dealer_hand, 
+                    hide_value=hide_dealer,
+                    dealer_value=None,  # Dealer doesn't compare against itself
+                    game_over=game_over
+                )
             
+        dealer_field = (
+            f"Dealer's Cards:\n"
+            f"{dealer_hand}\n"
+            f"Value: {dealer_score}{dealer_status}"
+        )
         embed.add_field(
-            name="Dealer's Hand",
-            value=f"{dealer_hand}\n💭 Value: {dealer_score}",
+            name="",
+            value=dealer_field,
             inline=False
         )
         
-        # Show player's hands
+        # Show player's hands (always second field)
         if game.player_split_hand is not None:
-            # Show both hands when split
-            hand1_value = game.calculate_hand(game.player_hand)
-            hand2_value = game.calculate_hand(game.player_split_hand)
+            hand1_value, hand1_status = game.calculate_hand_with_status(
+                game.player_hand,
+                dealer_value=dealer_value,
+                game_over=game_over
+            )
+            hand2_value, hand2_status = game.calculate_hand_with_status(
+                game.player_split_hand,
+                dealer_value=dealer_value,
+                game_over=game_over
+            )
             
-            # Format hands with clearer indicators for which is active
             hand1_prefix = "▶️" if split_hand_index == 0 else "  "
             hand2_prefix = "▶️" if split_hand_index == 1 else "  "
             
-            embed.add_field(
-                name=f"{user.display_name}'s Hands",
-                value=(
-                    f"**Hand 1:**\n"
-                    f"{hand1_prefix} {game.format_hand(game.player_hand)}\n"
-                    f"💭 Value: **{hand1_value}**\n"
-                    f"\n"  # Extra line for visual separation
-                    f"**Hand 2:**\n"
-                    f"{hand2_prefix} {game.format_hand(game.player_split_hand)}\n"
-                    f"💭 Value: **{hand2_value}**"
-                ),
-                inline=False
+            player_field = (
+                f"{user.display_name}'s Cards:\n"
+                f"Hand 1:\n"
+                f"{hand1_prefix} {game.format_hand(game.player_hand)}\n"
+                f"Value: {hand1_value}{hand1_status}\n"
+                f"\n"
+                f"Hand 2:\n"
+                f"{hand2_prefix} {game.format_hand(game.player_split_hand)}\n"
+                f"Value: {hand2_value}{hand2_status}"
+            )
+        else:
+            player_value, player_status = game.calculate_hand_with_status(
+                active_hand,
+                dealer_value=dealer_value,
+                game_over=game_over
+            )
+            player_field = (
+                f"{user.display_name}'s Cards:\n"
+                f"{game.format_hand(active_hand)}\n"
+                f"Value: {player_value}{player_status}"
             )
             
-            # If game is over, show results in a separate field for clarity
-            if game_over and results and len(results) > 1:
-                embed.add_field(
-                    name="Hand Results",
-                    value=(
-                        f"**Hand 1:** {results[0]}\n"
-                        f"**Hand 2:** {results[1]}"
-                    ),
-                    inline=False
-                )
-        else:
-            # Show single hand
-            player_hand = game.format_hand(active_hand)
-            embed.add_field(
-                name=f"{user.display_name}'s Hand",
-                value=f"{player_hand}\n💭 Value: **{player_value}**",
-                inline=False
-            )
-        
-        # Add bet and balance info
-        bet_field = "💰 **Bet Breakdown:**\n"
+        embed.add_field(
+            name="",
+            value=player_field,
+            inline=False
+        )
+
+        # Add separator before bet information
+        embed.add_field(
+            name="",
+            value=separator,
+            inline=False
+        )
+
+        # Bet information (always third field)
+        bet_field = []
+        bet_field.append("Bet Breakdown:")
         
         # Calculate total bet amount
         total_bet = bet * (2 if game.hand_doubled else 1)
@@ -513,129 +598,121 @@ class Games(commands.Cog):
             total_bet += split_bet
             
         # Show main hand bet
-        bet_field += f"Main Hand: 🍓 **{bet:,}**"
-        if game.hand_doubled:
-            bet_field += f" → 🍓 **{bet * 2:,}** (Doubled)"
-        bet_field += "\n"
+        bet_field.append(f"Main Hand: {bet:,} 🍓" + 
+                        (f" → {bet * 2:,} 🍓 (Doubled)" if game.hand_doubled else ""))
         
         # Show split hand bet if applicable
         if game.player_split_hand:
-            bet_field += f"Split Hand: 🍓 **{bet:,}**"
-            if game.split_hand_doubled:
-                bet_field += f" → 🍓 **{split_bet:,}** (Doubled)"
-            bet_field += "\n"
+            bet_field.append(f"Split Hand: {bet:,} 🍓" + 
+                           (f" → {split_bet:,} 🍓 (Doubled)" if game.split_hand_doubled else ""))
+            bet_field.append(f"Total Bet: {total_bet:,} 🍓")
             
-        # Show total bet amount
-        if game.player_split_hand or game.hand_doubled or game.split_hand_doubled:
-            bet_field += f"Total Bet: 🍓 **{total_bet:,}**\n"
-            
-        # Add insurance bet info if applicable
+        # Add insurance info
         if insurance_bet is not None:
-            bet_field += f"\n🛡️ **Insurance:**\n"
-            bet_field += f"Insurance Bet: 🍓 **{insurance_bet:,}**"
-            if insurance_result:
-                if "WIN" in insurance_result:
-                    bet_field += f" → Won: 🍓 **+{insurance_bet * 2:,}**"
-                else:
-                    bet_field += f" → Lost"
-            bet_field += "\n"
+            bet_field.append("")
+            bet_field.append("Insurance:")
+            bet_field.append(f"Insurance Bet: {insurance_bet:,} 🍓" + 
+                           (f" → Won: {insurance_bet * 2:,} 🍓" if insurance_result == "WIN" else " → Lost" if insurance_result else ""))
             
-        # Show game result if game is over
+        # Add game result
         if game_over:
-            bet_field += f"\n\n💫 **Game Results:**\n"
+            bet_field.append("")
+            bet_field.append("Game Results:")
             if results and len(results) > 1:
-                # For split hands, just show total outcome
                 if all("wins" in r.lower() for r in results):
-                    bet_field += "Both hands lost\n"
+                    bet_field.append("Both hands lost")
                 elif all("win" in r.lower() for r in results):
-                    bet_field += "Both hands won!\n"
+                    bet_field.append("Both hands won!")
                 elif all("push" in r.lower() for r in results):
-                    bet_field += "Both hands pushed\n"
+                    bet_field.append("Both hands pushed")
                 else:
-                    # Mixed results are shown in the Hand Results field
-                    bet_field += "See Hand Results above\n"
+                    bet_field.append("See Hand Results above")
             else:
-                bet_field += f"{result}\n"
+                bet_field.append(result)
                 
             if "Push" in result:
-                bet_field += f"🔄 Bet returned\n"
+                bet_field.append("Bet returned")
             elif balance_change > 0:
-                bet_field += f"💰 Won: 🍓 **+{balance_change:,}**\n"
+                bet_field.append(f"Won: {balance_change:,} 🍓")
             else:
-                bet_field += f"💸 Lost: 🍓 **{balance_change:,}**\n"
+                bet_field.append(f"Lost: {balance_change:,} 🍓")
                 
-        # Always show current balance with clear indication of locked bets
+        # Always show balance summary
         if current_balance is not None:
-            bet_field += f"\n💳 **Balance Summary:**\n"
-            bet_field += f"Starting Balance: 🍓 **{starting_balance:,}**\n"
+            bet_field.append("")
+            bet_field.append("")  # Add extra spacer line
+            bet_field.append("💰 Summary")
+            bet_field.append("")
+            bet_field.append(f"Starting: {starting_balance:,} 🍓")
             if game_over:
-                bet_field += f"Final Balance: 🍓 **{current_balance:,}**"
+                bet_field.append("")
+                bet_field.append(f"Final: {current_balance:,} 🍓")
+                if balance_change > 0:
+                    bet_field.append("")
+                    bet_field.append(f"✨ Profit: {balance_change:,} 🍓")
+                else:
+                    bet_field.append("")
+                    bet_field.append(f"📉 Loss: {balance_change:,} 🍓")
             else:
-                bet_field += f"Current Balance: 🍓 **{current_balance:,}**\n"
-                bet_field += f"Locked in Bets: 🍓 **{total_bet:,}**\n"
-                bet_field += f"Potential Win: 🍓 **{current_balance + (total_bet * 2):,}**"
+                bet_field.append("")
+                bet_field.append(f"Current: {current_balance:,} 🍓")
+                bet_field.append(f"Total Bet: {total_bet:,} 🍓")
+                bet_field.append("")
+                potential_win = total_bet * 2
+                final_balance = current_balance + potential_win
+                bet_field.append(f"💫 Potential: {potential_win:,} 🍓")
+                bet_field.append(f"✨ If Won: {final_balance:,} 🍓")
         
         embed.add_field(
-            name="Bet & Balance Information",
-            value=bet_field,
-            inline=True
+            name="",
+            value="\n".join(bet_field),
+            inline=False
         )
         
-        if game_over:
-            if "win" in result.lower():
-                color = COLORS['success']
-                result = f"✨ {result}"
-            elif "push" in result.lower():
-                color = COLORS['info']
-                result = f"🔄 {result}"
+        # Game options (always fourth field, even if empty)
+        if not game_over and (not hide_dealer or insurance_offered):
+            options = []
+            if insurance_offered:
+                options.extend([
+                    "🛡️ Take insurance (costs half your bet)",
+                    "❌  Skip insurance                      "  # Padded to match longest option
+                ])
             else:
-                color = COLORS['error']
-                result = f"❌ {result}"
-            embed.color = color
-            embed.add_field(
-                name="Result",
-                value=result,
-                inline=True
-            )
-        else:
-            if not hide_dealer or insurance_offered:  # Show options during insurance and regular play
-                if insurance_offered:
-                    options = [
-                        "[1] YES   🛡️ Take insurance (costs half your bet)",
-                        "[2] NO    ❌ Skip insurance"
-                    ]
-                else:
-                    options = [
-                        "[1] HIT   👊 Draw another card",
-                        "[2] STAND ✋ Keep current hand"
-                    ]
+                options.extend([
+                    "👊 HIT          - Draw another card    ",  # Padded to match longest option
+                    "✋ STAND        - Keep current hand    "   # Padded to match longest option
+                ])
+                
+                if (not game.player_split_hand and game.can_split(game.player_hand)):
+                    options.append("⚔️ SPLIT        - Split matching cards  ")  # Padded to match longest option
                     
-                    # Add split option if available
-                    if (not game.player_split_hand and 
-                        game.can_split(game.player_hand)):
-                        options.append("[3] SPLIT ⚔️ Split matching cards")
-                        
-                    # Add double down option if initial hand
-                    active_hand = game.player_split_hand if split_hand_index == 1 else game.player_hand
-                    if game.can_double_down(active_hand):
-                        options.append("[4] DOUBLE 💰 Double bet and draw one card")
-                
-                embed.add_field(
-                    name="Your Options",
-                    value=f"```\n{chr(10).join(options)}\n```",
-                    inline=False
-                )
-                
-        # Add game state footer
+                active_hand = game.player_split_hand if split_hand_index == 1 else game.player_hand
+                if game.can_double_down(active_hand):
+                    options.append("💰 DOUBLE       - Double bet and draw  ")  # Padded to match longest option
+            
+            # Add separator before options
+            embed.add_field(
+                name="",
+                value=separator,
+                inline=False
+            )
+            
+            embed.add_field(
+                name="Your Options",
+                value=f"```\n{chr(10).join(options)}\n```",
+                inline=False
+            )
+        
+        # Game state footer
         if not game_over:
             if hide_dealer:
-                state = "🎲 Dealing cards..."
+                state = "Dealing cards..."
             elif insurance_offered:
-                state = "🛡️ Insurance offered - Dealer showing Ace"
+                state = "Insurance offered - Dealer showing Ace"
             elif game.player_split_hand:
-                state = f"🎮 Playing Hand {split_hand_index + 1}/2..."
+                state = f"Playing Hand {split_hand_index + 1}/2..."
             else:
-                state = "🎮 Your turn..."
+                state = "Your turn..."
             embed.set_footer(text=state)
             
         return embed
@@ -711,7 +788,7 @@ class Games(commands.Cog):
                 interaction.user,
                 game,
                 bet,
-                hide_dealer=True,  # Still hide at first to maintain animation
+                hide_dealer=False,  # Show dealer's up card
                 split_hand_index=split_hand_index,
                 current_balance=current_balance,
                 starting_balance=starting_balance
@@ -727,7 +804,7 @@ class Games(commands.Cog):
                 interaction.user,
                 game,
                 bet,
-                hide_dealer=True,
+                hide_dealer=False,  # Show dealer's up card
                 split_hand_index=split_hand_index,
                 current_balance=current_balance,
                 starting_balance=starting_balance
@@ -735,12 +812,7 @@ class Games(commands.Cog):
             await game_msg.edit(embed=embed)
             await asyncio.sleep(1)
 
-            # Second card to dealer (face down)
-            second_dealer_card = game.deal_card()
-            game.dealer_hand.append(second_dealer_card)
-            logger.info(f"[CARDS] Dealer dealt second card (down): {second_dealer_card.rank}{second_dealer_card.suit}")
-            
-            # Check for insurance if dealer's first card is an Ace
+            # Check for insurance if dealer's first card is an Ace (before dealing second dealer card)
             insurance_taken = False
             insurance_bet = None
             insurance_result = None
@@ -810,52 +882,6 @@ class Games(commands.Cog):
                             )
                             await game_msg.edit(embed=embed)
                             await asyncio.sleep(2)  # Give time to see insurance bet placed
-                            
-                            # Check if dealer has blackjack
-                            dealer_value = game.calculate_hand(game.dealer_hand)
-                            if dealer_value == 21:
-                                # Insurance wins 2:1 (pays double the insurance bet)
-                                insurance_win = insurance_bet * 2
-                                await self.bot.game.add_strawberries(interaction.user.id, insurance_win)
-                                insurance_result = "WIN"
-                                logger.info(f"[INSURANCE] Insurance WIN - User {interaction.user.id} won {insurance_win} (2:1 payout on {insurance_bet} bet) (Dealer had: {game.dealer_hand[0].rank}{game.dealer_hand[0].suit}, {game.dealer_hand[1].rank}{game.dealer_hand[1].suit})")
-                                
-                                # Update display to show insurance win
-                                current_balance = self.bot.game.get_player_data(interaction.user.id)['strawberries']
-                                embed = await self.create_blackjack_embed(
-                                    interaction.user,
-                                    game,
-                                    bet,
-                                    hide_dealer=False,
-                                    insurance_offered=True,
-                                    split_hand_index=split_hand_index,
-                                    insurance_bet=insurance_bet,
-                                    insurance_result=insurance_result,
-                                    current_balance=current_balance,
-                                    starting_balance=starting_balance
-                                )
-                                await game_msg.edit(embed=embed)
-                                await asyncio.sleep(2)  # Give time to see insurance result
-                            else:
-                                insurance_result = "LOSS"
-                                logger.info(f"[INSURANCE] Insurance LOSS - User {interaction.user.id} lost {insurance_bet} (Dealer had: {game.dealer_hand[0].rank}{game.dealer_hand[0].suit}, {game.dealer_hand[1].rank}{game.dealer_hand[1].suit})")
-                                
-                                # Update display to show insurance loss
-                                current_balance = self.bot.game.get_player_data(interaction.user.id)['strawberries']
-                                embed = await self.create_blackjack_embed(
-                                    interaction.user,
-                                    game,
-                                    bet,
-                                    hide_dealer=False,
-                                    insurance_offered=True,
-                                    split_hand_index=split_hand_index,
-                                    insurance_bet=insurance_bet,
-                                    insurance_result=insurance_result,
-                                    current_balance=current_balance,
-                                    starting_balance=starting_balance
-                                )
-                                await game_msg.edit(embed=embed)
-                                await asyncio.sleep(2)  # Give time to see insurance result
                     else:
                         insurance_bet = None  # Reset if they decline insurance
                     
@@ -869,21 +895,41 @@ class Games(commands.Cog):
                         ephemeral=True
                     )
 
-            # Update display after insurance decision
-            embed = await self.create_blackjack_embed(
-                interaction.user,
-                game,
-                bet,
-                hide_dealer=True,  # Keep second card hidden
-                split_hand_index=split_hand_index,
-                insurance_bet=insurance_bet,
-                insurance_result=insurance_result,
-                current_balance=current_balance,
-                starting_balance=starting_balance
-            )
-            await game_msg.edit(embed=embed)
-            await asyncio.sleep(1)
-            
+            # Now deal dealer's second card
+            second_dealer_card = game.deal_card()
+            game.dealer_hand.append(second_dealer_card)
+            logger.info(f"[CARDS] Dealer dealt second card (down): {second_dealer_card.rank}{second_dealer_card.suit}")
+
+            # If insurance was taken, check if dealer has blackjack
+            if insurance_taken:
+                dealer_value = game.calculate_hand(game.dealer_hand)
+                if dealer_value == 21:
+                    # Insurance wins 2:1 (pays double the insurance bet)
+                    insurance_win = insurance_bet * 2
+                    await self.bot.game.add_strawberries(interaction.user.id, insurance_win)
+                    insurance_result = "WIN"
+                    logger.info(f"[INSURANCE] Insurance WIN - User {interaction.user.id} won {insurance_win} (2:1 payout on {insurance_bet} bet) (Dealer had: {game.dealer_hand[0].rank}{game.dealer_hand[0].suit}, {game.dealer_hand[1].rank}{game.dealer_hand[1].suit})")
+                else:
+                    insurance_result = "LOSS"
+                    logger.info(f"[INSURANCE] Insurance LOSS - User {interaction.user.id} lost {insurance_bet} (Dealer had: {game.dealer_hand[0].rank}{game.dealer_hand[0].suit}, {game.dealer_hand[1].rank}{game.dealer_hand[1].suit})")
+
+                # Update display to show insurance result
+                current_balance = self.bot.game.get_player_data(interaction.user.id)['strawberries']
+                embed = await self.create_blackjack_embed(
+                    interaction.user,
+                    game,
+                    bet,
+                    hide_dealer=False,
+                    insurance_offered=True,
+                    split_hand_index=split_hand_index,
+                    insurance_bet=insurance_bet,
+                    insurance_result=insurance_result,
+                    current_balance=current_balance,
+                    starting_balance=starting_balance
+                )
+                await game_msg.edit(embed=embed)
+                await asyncio.sleep(2)  # Give time to see insurance result
+
             # Store these values early but don't reveal yet
             player_value = game.calculate_hand(game.player_hand)
             dealer_value = game.calculate_hand(game.dealer_hand)
@@ -1177,9 +1223,25 @@ class Games(commands.Cog):
                 
                 # Only play dealer's hand if at least one player hand hasn't busted
                 if player_value <= 21 or split_value <= 21:
-                    # Dealer draws until 17 or higher
-                    while (game.calculate_hand(game.dealer_hand) < 17 or 
-                           game.is_soft_17(game.dealer_hand)):
+                    while True:
+                        dealer_value = game.calculate_hand(game.dealer_hand)
+                        
+                        # Check if beating all non-busted player hands
+                        beats_all_hands = True
+                        if player_value <= 21 and dealer_value <= player_value:
+                            beats_all_hands = False
+                        if split_value <= 21 and dealer_value <= split_value:
+                            beats_all_hands = False
+                            
+                        # Stand if we have hard 17+ (not soft 17)
+                        if dealer_value >= 17 and not game.is_soft_17(game.dealer_hand):
+                            break
+                            
+                        # Stand if we beat all non-busted hands
+                        if beats_all_hands and dealer_value >= 17:
+                            break
+                            
+                        # Otherwise, must hit (under 17 or soft 17)
                         game.dealer_hand.append(game.deal_card())
                     
                 dealer_value = game.calculate_hand(game.dealer_hand)
