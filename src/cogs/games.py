@@ -7,7 +7,7 @@ import asyncio
 from typing import Dict, Tuple, List, Optional
 from dataclasses import dataclass
 
-from utils.core import COLORS, setup_logger
+from src.utils.core import COLORS, setup_logger
 
 logger = setup_logger(__name__)
 

@@ -5,7 +5,7 @@ from discord.ext import commands
 from typing import Optional
 import asyncio
 
-from utils.core import COLORS, setup_logger, OWNER_ID
+from src.utils.core import COLORS, setup_logger, OWNER_ID
 
 logger = setup_logger(__name__)
 

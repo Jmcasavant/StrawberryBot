@@ -40,6 +40,10 @@ class StrawberryGame:
         
         # Load initial data
         self.load_data()
+
+    #
+    # Data Persistence Methods
+    #
         
     async def start(self) -> None:
         """Start the auto-save loop."""
@@ -65,13 +69,18 @@ class StrawberryGame:
         """Background task to automatically save data periodically."""
         while True:
             try:
-                await asyncio.sleep(300)  # Save every 5 minutes if needed
+                await asyncio.sleep(30)  # Save every 30 seconds if needed
                 await self.save_data_if_dirty()
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Error in auto-save loop: {e}")
                 
+    async def _save_immediate(self) -> None:
+        """Save data immediately."""
+        self._mark_dirty()
+        await self.save_data_if_dirty()
+        
     async def save_data_if_dirty(self) -> None:
         """Save data only if changes have been made."""
         if not self._dirty:
@@ -158,6 +167,10 @@ class StrawberryGame:
         """Mark the data as needing to be saved."""
         self._dirty = True
         self._cached_leaderboard = None  # Invalidate leaderboard cache
+
+    #
+    # Basic Strawberry Operations
+    #
         
     def get_strawberries(self, user_id: int) -> int:
         """Get user's strawberry count."""
@@ -169,7 +182,7 @@ class StrawberryGame:
             raise ValueError("Amount must be positive")
             
         self.players[user_id] += amount
-        self._mark_dirty()
+        await self._save_immediate()  # Save immediately
         logger.info(f"Added {amount} strawberries to user {user_id}")
         return self.players[user_id]
         
@@ -183,7 +196,7 @@ class StrawberryGame:
             return False
             
         self.players[user_id] = current - amount
-        self._mark_dirty()
+        await self._save_immediate()  # Save immediately
         logger.info(f"Removed {amount} strawberries from user {user_id}")
         return True
         
@@ -193,7 +206,7 @@ class StrawberryGame:
             raise ValueError("Amount cannot be negative")
             
         self.players[user_id] = amount
-        self._mark_dirty()
+        await self._save_immediate()  # Save immediately
         logger.info(f"Set user {user_id}'s strawberries to {amount}")
         
     async def transfer_strawberries(
@@ -202,16 +215,7 @@ class StrawberryGame:
         to_user_id: int,
         amount: int
     ) -> bool:
-        """Transfer strawberries between users.
-        
-        Args:
-            from_user_id: The sender's Discord ID
-            to_user_id: The receiver's Discord ID
-            amount: Amount of strawberries to transfer
-            
-        Returns:
-            bool: True if transfer was successful, False if insufficient funds
-        """
+        """Transfer strawberries between users."""
         if amount <= 0:
             raise ValueError("Amount must be positive")
             
@@ -220,14 +224,17 @@ class StrawberryGame:
             return False
             
         # Remove from sender
-        if not await self.remove_strawberries(from_user_id, amount):
-            return False
-            
+        self.players[from_user_id] -= amount
         # Add to receiver
-        await self.add_strawberries(to_user_id, amount)
+        self.players[to_user_id] += amount
         
+        await self._save_immediate()  # Save immediately after transfer
         logger.info(f"Transferred {amount} strawberries from {from_user_id} to {to_user_id}")
         return True
+
+    #
+    # Daily Rewards and Streaks
+    #
         
     def get_streak(self, user_id: int) -> int:
         """Get user's current daily streak."""
@@ -263,14 +270,7 @@ class StrawberryGame:
         return False, time_until_next
         
     async def claim_daily(self, user_id: int) -> int:
-        """Claim daily reward and update streak.
-        
-        Args:
-            user_id: The user's Discord ID
-            
-        Returns:
-            int: The amount of strawberries rewarded, or 0 if already claimed
-        """
+        """Claim daily reward and update streak."""
         can_claim, _ = self.can_claim_daily(user_id)
         if not can_claim:
             return 0
@@ -293,12 +293,16 @@ class StrawberryGame:
         reward = DAILY_REWARD + bonus
         
         # Update user data
-        await self.add_strawberries(user_id, reward)
+        self.players[user_id] += reward
         self.last_daily[user_id] = now
-        self._mark_dirty()
         
+        await self._save_immediate()  # Save immediately after daily claim
         logger.info(f"User {user_id} claimed daily reward: {reward} strawberries (streak: {streak})")
         return reward
+
+    #
+    # Leaderboard and Ranking
+    #
         
     async def get_leaderboard(self, limit: int = 10) -> List[Tuple[int, int]]:
         """Get the top players by strawberry count.
@@ -342,6 +346,10 @@ class StrawberryGame:
             
         user_strawberries = self.players[user_id]
         return sum(1 for count in self.players.values() if count > user_strawberries) + 1
+
+    #
+    # Maintenance Operations
+    #
         
     async def cleanup_inactive_users(self, days: int = 30) -> int:
         """Remove data for users inactive for the specified number of days.

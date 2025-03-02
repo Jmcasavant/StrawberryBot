@@ -6,7 +6,7 @@ import asyncio
 from typing import Optional, List, Union
 from datetime import datetime, timedelta
 
-from utils.core import COLORS, setup_logger
+from src.utils.core import COLORS, setup_logger
 
 logger = setup_logger(__name__)
 
@@ -81,8 +81,18 @@ class Economy(commands.Cog):
     async def daily(self, interaction: discord.Interaction) -> None:
         """Claim daily strawberry reward."""
         try:
-            await interaction.response.send_message("Claiming daily reward...", ephemeral=True)
+            # Check if user can claim
+            can_claim, time_until_next = self.bot.game.can_claim_daily(interaction.user.id)
+            if not can_claim:
+                hours, remainder = divmod(time_until_next.total_seconds(), 3600)
+                minutes, _ = divmod(remainder, 60)
+                await interaction.response.send_message(
+                    f"❌ You can claim again in {int(hours)}h {int(minutes)}m",
+                    ephemeral=True
+                )
+                return
             
+            await interaction.response.send_message("Claiming daily reward...", ephemeral=True)
             reward = await self.bot.game.claim_daily(interaction.user.id)
             
             if reward > 0:
@@ -110,10 +120,6 @@ class Economy(commands.Cog):
                     )
                     
                 await interaction.edit_original_response(embed=embed)
-            else:
-                await interaction.edit_original_response(
-                    content="❌ You've already claimed your daily reward!"
-                )
                     
         except Exception as e:
             logger.error(f"Daily claim error for {interaction.user.id}: {e}")

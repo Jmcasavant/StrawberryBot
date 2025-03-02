@@ -1,0 +1,11 @@
+discord.py>=2.3.2
+python-dotenv>=1.0.0
+typing-extensions>=4.7.1
+aiohttp>=3.8.5
+colorama>=0.4.6  # For colored console output
+redis>=5.0.1  # For caching
+SQLAlchemy>=2.0.0  # For database operations
+alembic>=1.12.0  # For database migrations
+aioredis>=2.0.1  # For async Redis operations
+uvloop>=0.17.0; sys_platform != "win32"  # For improved async performance on non-Windows
+orjson>=3.9.7  # For faster JSON processing 

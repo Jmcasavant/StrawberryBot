@@ -30,6 +30,7 @@ ENV/
 .vscode/
 *.swp
 *.swo
+*.code-workspace
 
 # Logs
 logs/
@@ -42,6 +43,7 @@ logs/
 
 # Project specific
 data/
+*.rdb  # Redis dump files
 
 # OS specific
 .DS_Store

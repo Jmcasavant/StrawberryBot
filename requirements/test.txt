@@ -1,0 +1,12 @@
+-r base.txt
+
+# Testing Dependencies
+pytest>=7.4.0
+pytest-asyncio>=0.21.1
+pytest-cov>=4.1.0
+pytest-mock>=3.11.1
+pytest-xdist>=3.3.1
+coverage>=7.3.0
+asynctest>=0.13.0
+faker>=19.3.1  # For generating test data
+hypothesis>=6.82.6  # For property-based testing 

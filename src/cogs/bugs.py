@@ -5,7 +5,7 @@ from discord.ext import commands
 from typing import Optional, List
 from datetime import datetime
 
-from utils.core import setup_logger, COLORS
+from src.utils.core import setup_logger, COLORS
 
 logger = setup_logger(__name__)
 
